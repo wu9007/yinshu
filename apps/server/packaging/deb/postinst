@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+if ! getent group yinshu >/dev/null; then
+  addgroup --system yinshu
+fi
+if ! getent passwd yinshu >/dev/null; then
+  adduser --system --ingroup yinshu --no-create-home --home /var/lib/yinshu yinshu
+fi
+install -d -o yinshu -g yinshu -m 0750 /etc/yinshu /var/lib/yinshu
+systemctl daemon-reload
+systemctl enable --now yinshu.service

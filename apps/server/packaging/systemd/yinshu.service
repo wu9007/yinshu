@@ -1,0 +1,25 @@
+[Unit]
+Description=印枢无界面服务
+After=network-online.target cups.service
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=yinshu
+Group=yinshu
+RuntimeDirectory=yinshu
+RuntimeDirectoryMode=0750
+StateDirectory=yinshu
+StateDirectoryMode=0750
+ConfigurationDirectory=yinshu
+ConfigurationDirectoryMode=0750
+ExecStart=/usr/bin/yinshu serve
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/yinshu /run/yinshu /etc/yinshu
+
+[Install]
+WantedBy=multi-user.target

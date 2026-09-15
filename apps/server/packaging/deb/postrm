@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+systemctl daemon-reload || true
+if [ "$1" = "purge" ]; then
+  rm -rf /etc/yinshu /var/lib/yinshu
+  if getent passwd yinshu >/dev/null; then
+    deluser --system yinshu || true
+  fi
+  if getent group yinshu >/dev/null; then
+    delgroup --system yinshu || true
+  fi
+fi

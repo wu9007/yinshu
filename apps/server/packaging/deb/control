@@ -1,0 +1,11 @@
+Package: yinshu-server
+Version: ${VERSION}
+Section: utils
+Priority: optional
+Architecture: ${ARCH}
+Maintainer: 印枢
+Depends: systemd, cups-client, libreoffice
+Provides: yinshu
+Conflicts: yinshu-desktop
+Description: 印枢无界面服务
+ Runs the YinShu agent as the dedicated yinshu system user.

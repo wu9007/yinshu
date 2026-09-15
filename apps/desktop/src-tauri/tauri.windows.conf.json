@@ -1,0 +1,9 @@
+{
+  "mainBinaryName": "YinShu",
+  "bundle": {
+    "externalBin": ["binaries/yinshu"],
+    "resources": {
+      "resources/windows/SumatraPDF.exe": "SumatraPDF.exe"
+    }
+  }
+}

@@ -1,0 +1,3 @@
+Package: yinshu-desktop
+Provides: yinshu
+Conflicts: yinshu-server
