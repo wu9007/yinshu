@@ -126,6 +126,9 @@ fn setup_desktop(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     )));
     app.manage(state);
     app.manage(handle);
+    if let Err(error) = commands::apply_autostart(app.handle(), config.app.autostart) {
+        tauri_plugin_log::log::warn!("failed to sync autostart registration: {error}");
+    }
     Ok(())
 }
 

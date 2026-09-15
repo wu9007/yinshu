@@ -209,6 +209,10 @@ jobs:
         if: startsWith(matrix.platform, 'windows')
         run: node scripts/prepare-windows-cli.mjs x86_64-pc-windows-msvc
 
+      - name: Clear cached installer bundles
+        shell: bash
+        run: rm -rf target/*/release/bundle target/release/bundle
+
       - name: Publish Tauri release
         uses: tauri-apps/tauri-action@v1
         env:

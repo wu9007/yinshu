@@ -201,19 +201,33 @@ pub(crate) async fn save_config_for_state(
         .map_err(|error| error.to_string())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AutostartOperation {
+    Enable,
+    Disable,
+    Keep,
+}
+
+/// 开机自启开启时始终重写启动项，把升级后的 `--from-autostart` 写进去。
+fn autostart_operation(desired: bool, currently_enabled: bool) -> AutostartOperation {
+    if desired {
+        AutostartOperation::Enable
+    } else if currently_enabled {
+        AutostartOperation::Disable
+    } else {
+        AutostartOperation::Keep
+    }
+}
+
 /// 通过 Tauri 自启动插件启用或禁用系统开机自启。
-fn apply_autostart(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
+pub(crate) fn apply_autostart(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
     let autolaunch = app.autolaunch();
     let is_enabled = autolaunch.is_enabled().map_err(|error| error.to_string())?;
-    if enabled == is_enabled {
-        return Ok(());
+    match autostart_operation(enabled, is_enabled) {
+        AutostartOperation::Keep => Ok(()),
+        AutostartOperation::Enable => autolaunch.enable().map_err(|error| error.to_string()),
+        AutostartOperation::Disable => autolaunch.disable().map_err(|error| error.to_string()),
     }
-    if enabled {
-        autolaunch.enable()
-    } else {
-        autolaunch.disable()
-    }
-    .map_err(|error| error.to_string())
 }
 
 fn check_service_port_available_for_host(host: &str, port: u16) -> Result<(), String> {
@@ -338,10 +352,10 @@ pub async fn list_papers(
 #[cfg(test)]
 mod tests {
     use super::{
-        check_service_port_available_for_host, clear_task_history_for_state,
+        autostart_operation, check_service_port_available_for_host, clear_task_history_for_state,
         export_diagnostics_with_service, get_task_history_events_for_state,
         get_task_history_for_state, run_doctor_with_service, save_config_for_state,
-        MAX_SERVICE_PORT, MIN_SERVICE_PORT,
+        AutostartOperation, MAX_SERVICE_PORT, MIN_SERVICE_PORT,
     };
     use crate::{
         config::AgentConfig,
@@ -512,6 +526,17 @@ mod tests {
         assert!(!path.exists());
 
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn enabling_autostart_always_rewrites_the_os_registration() {
+        assert_eq!(autostart_operation(true, false), AutostartOperation::Enable);
+        assert_eq!(autostart_operation(true, true), AutostartOperation::Enable);
+        assert_eq!(
+            autostart_operation(false, true),
+            AutostartOperation::Disable
+        );
+        assert_eq!(autostart_operation(false, false), AutostartOperation::Keep);
     }
 
     #[test]

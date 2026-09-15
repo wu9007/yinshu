@@ -57,8 +57,41 @@ export function labelReleaseAssetName(filename) {
   return null;
 }
 
+/** Keep the newest local file when rust-cache leaves duplicate bundle names. */
+export function newestBundlePathByName(paths, mtimeMsByPath) {
+  const byName = new Map();
+  for (const path of paths) {
+    const name = basename(path);
+    const mtime = mtimeMsByPath.get(path) ?? 0;
+    const current = byName.get(name);
+    if (!current || mtime > current.mtime) {
+      byName.set(name, { path, mtime });
+    }
+  }
+  return new Map([...byName].map(([name, value]) => [name, value.path]));
+}
+
+/** Only rename assets that tauri-action already uploaded to this tag. */
+export function selectReleaseAssetsToRelabel(releaseAssetNames, localNames) {
+  const local = new Set(localNames);
+  const selected = [];
+  const seenLabeled = new Set();
+  for (const current of releaseAssetNames) {
+    const labeled = labelReleaseAssetName(current);
+    if (!labeled || labeled === current || seenLabeled.has(labeled)) {
+      continue;
+    }
+    if (!local.has(current)) {
+      throw new Error(`release asset ${current} is not in the local bundle directory`);
+    }
+    seenLabeled.add(labeled);
+    selected.push({ current, labeled });
+  }
+  return selected;
+}
+
 function collectBundleFiles(root) {
-  return [
+  const discovered = [
     ...globSync('target/**/release/bundle/**/*', { cwd: root }),
     ...globSync('target/packages/*', { cwd: root }),
   ]
@@ -70,6 +103,8 @@ function collectBundleFiles(root) {
         return false;
       }
     });
+  const mtimes = new Map(discovered.map((path) => [path, statSync(path).mtimeMs]));
+  return newestBundlePathByName(discovered, mtimes);
 }
 
 function runGh(args) {
@@ -80,15 +115,18 @@ function runGh(args) {
   return result.stdout;
 }
 
+function listReleaseAssetNames(tag) {
+  const release = JSON.parse(runGh(['release', 'view', tag, '--json', 'assets']));
+  return (release.assets ?? []).map((asset) => asset.name);
+}
+
 function relabelLocalFiles(root, tag) {
-  const seen = new Set();
-  for (const path of collectBundleFiles(root)) {
-    const current = basename(path);
-    const labeled = labelReleaseAssetName(current);
-    if (!labeled || labeled === current || seen.has(labeled)) {
-      continue;
-    }
-    seen.add(labeled);
+  const localByName = collectBundleFiles(root);
+  const selected = selectReleaseAssetsToRelabel(listReleaseAssetNames(tag), [
+    ...localByName.keys(),
+  ]);
+  for (const { current, labeled } of selected) {
+    const path = localByName.get(current);
     runGh(['release', 'upload', tag, `${path}#${labeled}`, '--clobber']);
     try {
       runGh(['release', 'delete-asset', tag, current, '--yes']);

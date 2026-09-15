@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { labelReleaseAssetName } from './label-release-assets.mjs';
+import {
+  labelReleaseAssetName,
+  newestBundlePathByName,
+  selectReleaseAssetsToRelabel,
+} from './label-release-assets.mjs';
 
 test('desktop installers include the operating system in the file name', () => {
   assert.equal(
@@ -69,4 +73,48 @@ test('release workflow relabels desktop and headless assets before publishing', 
 
   assert.match(workflow, /label-release-assets\.mjs/);
   assert.match(workflow, /scripts\/label-release-assets\.test\.mjs/);
+  assert.match(workflow, /Clear cached installer bundles/);
+  assert.match(workflow, /rm -rf target\/\*\/release\/bundle target\/release\/bundle/);
+});
+
+test('upload only relabels assets already on the GitHub release', () => {
+  const selected = selectReleaseAssetsToRelabel(
+    ['印枢_1.0.1_x64-setup.exe', '印枢-1.0.1-Windows-x64-setup.exe'],
+    ['印枢_1.0.1_x64-setup.exe', '印枢_1.0.0_x64-setup.exe'],
+  );
+
+  assert.deepEqual(selected, [
+    {
+      current: '印枢_1.0.1_x64-setup.exe',
+      labeled: '印枢-1.0.1-Windows-x64-setup.exe',
+    },
+  ]);
+});
+
+test('upload refuses to label a release asset that is not on disk', () => {
+  assert.throws(
+    () => selectReleaseAssetsToRelabel(['印枢_1.0.1_x64-setup.exe'], []),
+    /印枢_1\.0\.1_x64-setup\.exe is not in the local bundle directory/,
+  );
+});
+
+test('duplicate cached bundle names keep the newest file', () => {
+  const newest = newestBundlePathByName(
+    [
+      'target/release/bundle/nsis/印枢_1.0.0_x64-setup.exe',
+      'target/x86_64-pc-windows-msvc/release/bundle/nsis/印枢_1.0.0_x64-setup.exe',
+    ],
+    new Map([
+      ['target/release/bundle/nsis/印枢_1.0.0_x64-setup.exe', 1],
+      [
+        'target/x86_64-pc-windows-msvc/release/bundle/nsis/印枢_1.0.0_x64-setup.exe',
+        2,
+      ],
+    ]),
+  );
+
+  assert.equal(
+    newest.get('印枢_1.0.0_x64-setup.exe'),
+    'target/x86_64-pc-windows-msvc/release/bundle/nsis/印枢_1.0.0_x64-setup.exe',
+  );
 });

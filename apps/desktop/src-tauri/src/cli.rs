@@ -3,7 +3,8 @@ use std::{net::SocketAddr, sync::Arc};
 use yinshu_cli::{
     client::LocalClientExecutor,
     parser::{cli_display_output_from, run_cli_from},
-    CommandExecutor, CommandService, TerminalInteraction,
+    CommandExecutor, CommandService, ProductCommandAdapter, TerminalInteraction,
+    UnsupportedProductCommandAdapter,
 };
 use yinshu_runtime::{ipc, RuntimeBuilder, RuntimeCommandExecutor, RuntimePaths};
 
@@ -16,7 +17,8 @@ pub fn run_cli_from_env() -> i32 {
         print!("{}", output.stdout);
         return output.exit_code;
     }
-    let service = if argv.get(1).and_then(|arg| arg.to_str()) == Some("diagnose") {
+    let diagnose = argv.get(1).and_then(|arg| arg.to_str()) == Some("diagnose");
+    let service = if diagnose {
         yinshu_cli::diagnose_command_service()
     } else {
         let read_only = argv.get(1).and_then(|arg| arg.to_str()) == Some("doctor");
@@ -28,14 +30,20 @@ pub fn run_cli_from_env() -> i32 {
             }
         }
     };
-    let runtime = tokio::runtime::Runtime::new().expect("create CLI runtime");
-    let product = match DesktopProductCommandAdapter::new(service.clone()) {
-        Ok(product) => Arc::new(product),
-        Err(error) => {
-            eprintln!("{error}");
-            return 1;
+    let product: Arc<dyn ProductCommandAdapter> = if diagnose {
+        Arc::new(UnsupportedProductCommandAdapter::new(
+            "diagnose does not use desktop autostart or language commands",
+        ))
+    } else {
+        match DesktopProductCommandAdapter::new(service.clone()) {
+            Ok(product) => Arc::new(product),
+            Err(error) => {
+                eprintln!("{error}");
+                return 1;
+            }
         }
     };
+    let runtime = tokio::runtime::Runtime::new().expect("create CLI runtime");
     match runtime.block_on(run_cli_from(
         argv,
         service,
