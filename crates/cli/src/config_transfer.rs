@@ -206,7 +206,15 @@ pub fn encrypt_payload(
     let mut nonce = [0u8; NONCE_LEN];
     OsRng.fill_bytes(&mut salt);
     OsRng.fill_bytes(&mut nonce);
+    encrypt_payload_with(payload, password, salt, nonce)
+}
 
+fn encrypt_payload_with(
+    payload: &ConfigTransferPayload,
+    password: &str,
+    salt: [u8; SALT_LEN],
+    nonce: [u8; NONCE_LEN],
+) -> Result<EncryptedConfigFile, ConfigTransferError> {
     let mut key = derive_key(password, &salt)?;
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| ConfigTransferError::Serialize)?;
     let plaintext = serde_json::to_vec(payload).map_err(|_| ConfigTransferError::Serialize)?;
@@ -544,6 +552,26 @@ mod tests {
 
     #[test]
     fn decrypts_php_compatible_test_vector() {
+        const EXPECTED_PAYLOAD: &str =
+            "OTX3vkYug76bv33wsWKAu9k2ZAC15kP0J/sjtR4W/hYN8NtYI35R1lDtsdyMNstmY6AtPHVwTJULwKUt6yiZNsKNcFGFt5gyRy85Yk88Y8NBOUEzskxVNfxX";
+        let salt = [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+            0x0e, 0x0f,
+        ];
+        let nonce = [
+            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b,
+        ];
+        let source = ConfigTransferPayload {
+            format: PAYLOAD_FORMAT.to_string(),
+            version: TRANSFER_VERSION,
+            config: PartialTransferConfig {
+                service: Some(PartialServiceTransferConfig { port: Some(17890) }),
+                security: None,
+            },
+        };
+        let generated = encrypt_payload_with(&source, "test-password", salt, nonce).unwrap();
+        assert_eq!(generated.payload, EXPECTED_PAYLOAD);
+
         let encrypted = EncryptedConfigFile {
             format: "yinshu-config-encrypted".to_string(),
             version: 1,
@@ -557,7 +585,7 @@ mod tests {
                 salt: "AAECAwQFBgcICQoLDA0ODw==".to_string(),
                 nonce: "EBESExQVFhcYGRob".to_string(),
             },
-            payload: "OTX3vkYug76bv335qmWdp85pbgu85QfwarlnqhxGoV0U+4sRez0dlwWy+5eIe597KLRqdHg7XJVbjLds/mXROcLHLhTJrJJ+DWpB2Xc6BX2sKii+bziOsb8akhUwxqo=".to_string(),
+            payload: EXPECTED_PAYLOAD.to_string(),
         };
 
         let payload = decrypt_payload(&encrypted, "test-password").unwrap();

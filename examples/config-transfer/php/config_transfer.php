@@ -10,7 +10,7 @@ const ARGON2_MEMORY_KIB = 19456;
 const ARGON2_ITERATIONS = 2;
 const ARGON2_PARALLELISM = 1;
 const GCM_TAG_BYTES = 16;
-const EXPECTED_PAYLOAD = 'OTX3vkYug76bv335qmWdp85pbgu85QfwarlnqhxGoV0U+4sRez0dlwWy+5eIe597KLRqdHg7XJVbjLds/mXROcLHLhTJrJJ+DWpB2Xc6BX2sKii+bziOsb8akhUwxqo=';
+const EXPECTED_PAYLOAD = 'OTX3vkYug76bv33wsWKAu9k2ZAC15kP0J/sjtR4W/hYN8NtYI35R1lDtsdyMNstmY6AtPHVwTJULwKUt6yiZNsKNcFGFt5gyRy85Yk88Y8NBOUEzskxVNfxX';
 
 function encryptConfigFile(array $payload, string $password, array $options = []): array
 {
