@@ -8,6 +8,8 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-22.04
+    env:
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v6
@@ -20,6 +22,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
@@ -28,7 +33,11 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo check --workspace
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      - name: Test Rust workspace
+        env:
+          CARGO_BUILD_JOBS: "1"
+          CARGO_PROFILE_TEST_DEBUG: "0"
+        run: cargo test --workspace
       - run: pnpm --dir apps/desktop typecheck
       - run: pnpm --dir apps/desktop lint
       - run: pnpm --dir apps/desktop test

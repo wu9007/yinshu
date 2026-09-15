@@ -45,6 +45,9 @@ test('release workflow builds from v* tags on main', () => {
   assert.doesNotMatch(workflow, /yinshu-v/);
   assert.match(workflow, /release-version\.mjs tag/);
   assert.match(workflow, /Tag must point at a commit on main/);
+  assert.match(workflow, /swatinem\/rust-cache@v2/);
+  assert.match(workflow, /CARGO_BUILD_JOBS: "1"/);
+  assert.match(workflow, /CARGO_PROFILE_TEST_DEBUG: "0"/);
 });
 
 test('release workflow marks SemVer prereleases as GitHub prereleases', () => {
