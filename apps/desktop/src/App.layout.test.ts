@@ -152,7 +152,7 @@ describe('App 单页状态面板', () => {
     await flushPromises();
 
     expect(wrapper.find('[data-testid="app-toast"]').exists()).toBe(false);
-    expect(wrapper.get('[data-testid="print-section"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="print-section"]').exists()).toBe(true);
   });
 
   it('离线打印机状态点在下拉内部', async () => {
