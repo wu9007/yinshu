@@ -48,7 +48,7 @@ test('README OS table matches CI-backed platforms', () => {
 
   assert.match(backlog, /Windows 7/);
   assert.match(backlog, /麒麟/);
-  assert.match(backlog, /没有安装包/);
+  assert.match(backlog, /龙芯/);
   assert.match(backlogEn, /Windows 7/);
   assert.match(backlogEn, /Kylin/);
   assert.match(backlogEn, /not supported/);
