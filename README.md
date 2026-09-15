@@ -1,16 +1,10 @@
 # 印枢
 
-本机打印代理。网站和局域网设备把任务交给工位上的印枢，操作系统打印队列负责出纸。
+本机打印代理。网站、手机和局域网设备把任务交给工位上的印枢，操作系统打印队列出纸。
 
 面向仓库、门店、国产工位和信创环境。不宣称任何信创认证。
 
 [English](./README_en.md)
-
-<p align="center">
-  <img src="screenshots/settings.png" width="280" alt="设置" />
-  <img src="screenshots/devices.png" width="280" alt="设备名单" />
-  <img src="screenshots/qr.png" width="280" alt="连接二维码" />
-</p>
 
 ## 适配的操作系统
 
@@ -18,12 +12,17 @@
 
 | 系统 | 版本 | 架构 | 安装包 |
 | --- | --- | --- | --- |
-| Windows | **7**、8.1、10、11 | x64 | NSIS（`.exe`）、MSI。Windows 7 需 WebView2，建议用 NSIS |
-| macOS | 10.15 Catalina 及以上 | Apple Silicon、Intel | `.dmg` |
+| Windows | 10、11 | x64 | NSIS（`.exe`）、MSI |
+| macOS | 10.15 Catalina 及以上 | Apple Silicon、Intel | `.dmg`。目前未签名、未公证，需右键打开或去掉隔离属性 |
 | Linux 桌面 | webkit2gtk 4.1，例如 Ubuntu 22.04+、Debian 12+ | x64、ARM64 | deb、rpm、AppImage |
 | Linux 无界面 | 同上 | x64、ARM64 | deb、rpm |
+| 手机 / 平板 | iOS、Android 系统浏览器 | — | 无安装包。扫工位二维码，由已放行的网页打印。HTTPS 页面连不上 `ws://` |
 
-不提供 32 位 Windows，也不提供 Windows ARM 安装包。
+不提供 32 位 Windows，也不提供 Windows ARM 安装包。印枢装在工位电脑上；手机、平板不装客户端。
+
+<p align="center">
+  <img src="screenshots/settings.png" width="360" alt="设置" />
+</p>
 
 ## 做什么
 

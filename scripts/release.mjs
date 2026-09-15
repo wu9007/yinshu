@@ -94,6 +94,7 @@ async function releaseApp() {
   }
 
   ensureCleanWorktree();
+  ensureHeadIsOnOriginMain();
   await confirmOrExit(`Confirm tagging HEAD as ${releaseTag} on main and pushing it? [y/N] `);
 
   run('git', ['tag', releaseTag], { stdio: 'inherit' });
@@ -144,6 +145,18 @@ function fetchReleaseTags() {
   run('git', ['fetch', '--quiet', 'origin', '+refs/tags/v*:refs/tags/v*']);
 }
 
+function ensureHeadIsOnOriginMain() {
+  run('git', ['fetch', '--quiet', 'origin', 'main']);
+  const ancestor = spawnSync('git', ['merge-base', '--is-ancestor', 'HEAD', 'FETCH_HEAD'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  if (ancestor.status !== 0) {
+    fail('HEAD is not on origin/main. Push main first, then tag:\n  git push origin main');
+  }
+}
+
 function tagExists(tag) {
   const result = spawnSync('git', ['rev-parse', '-q', '--verify', `refs/tags/${tag}`], {
     cwd: process.cwd(),
@@ -186,7 +199,8 @@ Release target: YinShu desktop installers and Linux headless deb/rpm artifacts.
 This script validates that apps/desktop/package.json,
 apps/desktop/src-tauri/tauri.conf.json, and the workspace Cargo.toml
 use the same version, then tags the current main commit and pushes
-that tag. 1.0.0 becomes v1.0. GitHub Actions builds and publishes it.
+that tag. HEAD must already be on origin/main. 1.0.0 becomes v1.0.
+GitHub Actions builds and publishes it.
 
 Options:
   --dry-run             Print the release command without tagging

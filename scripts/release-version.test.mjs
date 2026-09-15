@@ -21,6 +21,21 @@ test('release tags drop a trailing .0 patch', () => {
   assert.equal(toReleaseTag('1.0.0-rc.1'), 'v1.0-rc.1');
 });
 
+test('README OS table matches CI-backed platforms', () => {
+  const readme = readFileSync('README.md', 'utf8');
+  const readmeEn = readFileSync('README_en.md', 'utf8');
+
+  assert.match(readme, /## 适配的操作系统/);
+  assert.match(readme, /\| Windows \| 10、11 \|/);
+  assert.doesNotMatch(readme, /Windows 7|8\.1、10/);
+  assert.match(readme, /未签名、未公证/);
+  assert.match(readme, /HTTPS 页面连不上 `ws:\/\//);
+  assert.match(readmeEn, /\| Windows \| 10, 11 \|/);
+  assert.doesNotMatch(readmeEn, /Windows 7|8\.1, 10/);
+  assert.match(readmeEn, /unsigned and not notarized/);
+  assert.match(readmeEn, /HTTPS pages cannot use `ws:\/\//);
+});
+
 test('release workflow builds from v* tags on main', () => {
   const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
 

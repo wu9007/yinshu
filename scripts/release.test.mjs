@@ -39,6 +39,14 @@ test('prints app release help', () => {
   assert.match(result.stdout, /desktop installers and Linux headless deb\/rpm artifacts/);
 });
 
+test('release script requires HEAD to already be on origin/main', () => {
+  const script = readFileSync(scriptPath, 'utf8');
+
+  assert.match(script, /function ensureHeadIsOnOriginMain/);
+  assert.match(script, /merge-base', '--is-ancestor', 'HEAD', 'FETCH_HEAD'/);
+  assert.match(script, /Push main first, then tag/);
+});
+
 test('dry run prints app release command without pushing', () => {
   const result = runRelease(['--', '--dry-run', '--skip-fetch']);
 

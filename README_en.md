@@ -1,16 +1,10 @@
 # YinShu (印枢)
 
-A print agent on the workstation. Websites and LAN devices send jobs to YinShu; the OS print queue puts them on paper.
+A print agent on the workstation. Websites, phones, and LAN devices send jobs to YinShu; the OS print queue puts them on paper.
 
 Built for warehouses, stores, and domestic / Xinchuang workstations. No certification is claimed.
 
 [中文](./README.md)
-
-<p align="center">
-  <img src="screenshots/settings.png" width="280" alt="Settings" />
-  <img src="screenshots/devices.png" width="280" alt="Device list" />
-  <img src="screenshots/qr.png" width="280" alt="Connection QR code" />
-</p>
 
 ## Supported operating systems
 
@@ -18,12 +12,17 @@ Installers are only on [Releases](https://github.com/wu9007/yinshu/releases).
 
 | OS | Versions | Arch | Packages |
 | --- | --- | --- | --- |
-| Windows | **7**, 8.1, 10, 11 | x64 | NSIS (`.exe`), MSI. Windows 7 needs WebView2; prefer NSIS |
-| macOS | 10.15 Catalina and later | Apple Silicon, Intel | `.dmg` |
+| Windows | 10, 11 | x64 | NSIS (`.exe`), MSI |
+| macOS | 10.15 Catalina and later | Apple Silicon, Intel | `.dmg`. Currently unsigned and not notarized; right-click to open or remove quarantine |
 | Linux desktop | webkit2gtk 4.1, e.g. Ubuntu 22.04+, Debian 12+ | x64, ARM64 | deb, rpm, AppImage |
 | Linux headless | same | x64, ARM64 | deb, rpm |
+| Phone / tablet | iOS and Android system browsers | — | No app. Scan the workstation QR code; an allowlisted page prints. HTTPS pages cannot use `ws://` |
 
-No 32-bit Windows. No Windows ARM builds.
+No 32-bit Windows. No Windows ARM builds. YinShu is installed on the workstation; phones and tablets do not install a client.
+
+<p align="center">
+  <img src="screenshots/settings.png" width="360" alt="Settings" />
+</p>
 
 ## What it does
 
