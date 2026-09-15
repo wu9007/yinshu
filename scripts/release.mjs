@@ -199,7 +199,7 @@ Release target: YinShu desktop installers and Linux headless deb/rpm artifacts.
 This script validates that apps/desktop/package.json,
 apps/desktop/src-tauri/tauri.conf.json, and the workspace Cargo.toml
 use the same version, then tags the current main commit and pushes
-that tag. HEAD must already be on origin/main. 1.0.0 becomes v1.0.
+that tag. HEAD must already be on origin/main. 1.1.0 becomes v1.1.0.
 GitHub Actions builds and publishes it.
 
 Options:

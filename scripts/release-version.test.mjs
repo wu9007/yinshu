@@ -14,11 +14,11 @@ test('SemVer prerelease versions sort before the final Linux package version', (
   assert.equal(isPrerelease('0.2.0-dev.1'), true);
 });
 
-test('release tags drop a trailing .0 patch', () => {
-  assert.equal(toReleaseTag('1.0.0'), 'v1.0');
+test('release tags keep the full SemVer', () => {
+  assert.equal(toReleaseTag('1.0.0'), 'v1.0.0');
   assert.equal(toReleaseTag('1.0.1'), 'v1.0.1');
-  assert.equal(toReleaseTag('1.1.0'), 'v1.1');
-  assert.equal(toReleaseTag('1.0.0-rc.1'), 'v1.0-rc.1');
+  assert.equal(toReleaseTag('1.1.0'), 'v1.1.0');
+  assert.equal(toReleaseTag('1.0.0-rc.1'), 'v1.0.0-rc.1');
 });
 
 function markdownSection(markdown, heading) {

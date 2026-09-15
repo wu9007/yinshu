@@ -10,13 +10,10 @@ export function toLinuxPackageVersion(version) {
   return version.replace('-', '~');
 }
 
-/** Map 1.0.0 → v1.0, 1.0.1 → v1.0.1, 1.0.0-rc.1 → v1.0-rc.1. */
+/** Map 1.1.0 → v1.1.0, 1.0.1 → v1.0.1, 1.0.0-rc.1 → v1.0.0-rc.1. */
 export function toReleaseTag(version) {
   const [core, pre] = version.split('-', 2);
-  const parts = core.split('.');
-  const short =
-    parts.length === 3 && parts[2] === '0' ? `${parts[0]}.${parts[1]}` : core;
-  return pre ? `v${short}-${pre}` : `v${short}`;
+  return pre ? `v${core}-${pre}` : `v${core}`;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

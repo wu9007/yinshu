@@ -7655,7 +7655,7 @@ checksum = "7a5a4b21e1a62b67a2970e6831bc091d7b87e119e7f9791aef9702e3bef04448"
 
 [[package]]
 name = "yinshu-cli"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -7677,7 +7677,7 @@ dependencies = [
 
 [[package]]
 name = "yinshu-core"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
  "ipnet",
@@ -7690,7 +7690,7 @@ dependencies = [
 
 [[package]]
 name = "yinshu-desktop"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "auto-launch",
@@ -7713,7 +7713,7 @@ dependencies = [
 
 [[package]]
 name = "yinshu-runtime"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -7750,7 +7750,7 @@ dependencies = [
 
 [[package]]
 name = "yinshu-server"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "clap",
  "tempfile",

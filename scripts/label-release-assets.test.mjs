@@ -4,8 +4,10 @@ import test from 'node:test';
 
 import {
   githubAssetNames,
+  ghReleaseDeleteAssetArgs,
   labelReleaseAssetName,
   newestBundlePathByName,
+  releaseAssetNamesToDelete,
   releaseNameCandidates,
   selectReleaseAssetsToRelabel,
 } from './label-release-assets.mjs';
@@ -13,43 +15,43 @@ import {
 test('desktop installers include the operating system in the file name', () => {
   assert.equal(
     labelReleaseAssetName('印枢_1.0.0_x64-setup.exe'),
-    '印枢-1.0.0-Windows-x64-setup.exe',
+    'yinshu-1.0.0-Windows-x64-setup.exe',
   );
   assert.equal(
     labelReleaseAssetName('印枢_1.0.0_x64_zh-CN.msi'),
-    '印枢-1.0.0-Windows-x64.msi',
+    'yinshu-1.0.0-Windows-x64.msi',
   );
   assert.equal(
     labelReleaseAssetName('印枢_1.0.0_aarch64.dmg'),
-    '印枢-1.0.0-macOS-AppleSilicon.dmg',
+    'yinshu-1.0.0-macOS-AppleSilicon.dmg',
   );
   assert.equal(
     labelReleaseAssetName('印枢_1.0.0_x64.dmg'),
-    '印枢-1.0.0-macOS-Intel.dmg',
+    'yinshu-1.0.0-macOS-Intel.dmg',
   );
   assert.equal(
     labelReleaseAssetName('印枢_1.0.0_amd64.deb'),
-    '印枢-1.0.0-Linux-x64.deb',
+    'yinshu-1.0.0-Linux-x64.deb',
   );
   assert.equal(
     labelReleaseAssetName('印枢_1.0.0_arm64.deb'),
-    '印枢-1.0.0-Linux-arm64.deb',
+    'yinshu-1.0.0-Linux-arm64.deb',
   );
   assert.equal(
     labelReleaseAssetName('印枢_1.0.0_amd64.AppImage'),
-    '印枢-1.0.0-Linux-x64.AppImage',
+    'yinshu-1.0.0-Linux-x64.AppImage',
   );
   assert.equal(
     labelReleaseAssetName('印枢_1.0.0_aarch64.AppImage'),
-    '印枢-1.0.0-Linux-arm64.AppImage',
+    'yinshu-1.0.0-Linux-arm64.AppImage',
   );
   assert.equal(
     labelReleaseAssetName('印枢-1.0.0-1.x86_64.rpm'),
-    '印枢-1.0.0-Linux-x64.rpm',
+    'yinshu-1.0.0-Linux-x64.rpm',
   );
   assert.equal(
     labelReleaseAssetName('印枢-1.0.0-1.aarch64.rpm'),
-    '印枢-1.0.0-Linux-arm64.rpm',
+    'yinshu-1.0.0-Linux-arm64.rpm',
   );
 });
 
@@ -66,7 +68,7 @@ test('headless packages include Linux in the file name', () => {
 
 test('unknown or already labeled names are left unchanged', () => {
   assert.equal(labelReleaseAssetName('latest.json'), null);
-  assert.equal(labelReleaseAssetName('印枢-1.0.0-Windows-x64-setup.exe'), null);
+  assert.equal(labelReleaseAssetName('yinshu-1.0.0-Windows-x64-setup.exe'), null);
   assert.equal(labelReleaseAssetName('印枢_1.0.0_x64-setup.exe.sig'), null);
 });
 
@@ -81,14 +83,14 @@ test('release workflow relabels desktop and headless assets before publishing', 
 
 test('upload only relabels assets already on the GitHub release', () => {
   const selected = selectReleaseAssetsToRelabel(
-    ['印枢_1.0.1_x64-setup.exe', '印枢-1.0.1-Windows-x64-setup.exe'],
+    ['印枢_1.0.1_x64-setup.exe', 'yinshu-1.0.1-Windows-x64-setup.exe'],
     ['印枢_1.0.1_x64-setup.exe', '印枢_1.0.0_x64-setup.exe'],
   );
 
   assert.deepEqual(selected, [
     {
       current: '印枢_1.0.1_x64-setup.exe',
-      labeled: '印枢-1.0.1-Windows-x64-setup.exe',
+      labeled: 'yinshu-1.0.1-Windows-x64-setup.exe',
     },
   ]);
 });
@@ -104,6 +106,10 @@ test('upload skips other platforms and leftover draft assets', () => {
 });
 
 test('upload matches GitHub names that dropped the 印枢 prefix', () => {
+  assert.deepEqual(releaseNameCandidates('印枢-1.0.0-1.x86_64.rpm'), [
+    '印枢-1.0.0-1.x86_64.rpm',
+    '-1.0.0-1.x86_64.rpm',
+  ]);
   assert.deepEqual(releaseNameCandidates('印枢_1.0.0_aarch64.dmg'), [
     '印枢_1.0.0_aarch64.dmg',
     '_1.0.0_aarch64.dmg',
@@ -113,7 +119,7 @@ test('upload matches GitHub names that dropped the 印枢 prefix', () => {
     [
       {
         current: '印枢_1.0.0_aarch64.dmg',
-        labeled: '印枢-1.0.0-macOS-AppleSilicon.dmg',
+        labeled: 'yinshu-1.0.0-macOS-AppleSilicon.dmg',
       },
     ],
   );
@@ -122,6 +128,28 @@ test('upload matches GitHub names that dropped the 印枢 prefix', () => {
       { name: '_1.0.0_aarch64.dmg', label: '印枢_1.0.0_aarch64.dmg' },
     ]),
     ['_1.0.0_aarch64.dmg', '印枢_1.0.0_aarch64.dmg'],
+  );
+});
+
+test('delete-asset treats leading-hyphen RPM names as file names', () => {
+  assert.deepEqual(ghReleaseDeleteAssetArgs('v1.0', '-1.0.0-1.x86_64.rpm'), [
+    'release',
+    'delete-asset',
+    'v1.0',
+    '--yes',
+    '--',
+    '-1.0.0-1.x86_64.rpm',
+  ]);
+  assert.deepEqual(
+    releaseAssetNamesToDelete(
+      ['印枢-1.0.0-1.x86_64.rpm', '印枢-1.0.0-Linux-x64.rpm'],
+      '印枢-1.0.0-1.x86_64.rpm',
+    ),
+    ['印枢-1.0.0-1.x86_64.rpm', '印枢-1.0.0-Linux-x64.rpm'],
+  );
+  assert.deepEqual(
+    releaseAssetNamesToDelete(['-1.0.0-1.x86_64.rpm'], '印枢-1.0.0-1.x86_64.rpm'),
+    ['-1.0.0-1.x86_64.rpm'],
   );
 });
 
