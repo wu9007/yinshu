@@ -20,7 +20,8 @@ impl DesktopProductCommandAdapter {
         let mut builder = AutoLaunchBuilder::new();
         builder
             .set_app_name("印枢")
-            .set_app_path(&executable.to_string_lossy());
+            .set_app_path(&executable.to_string_lossy())
+            .set_args(&["--from-autostart"]);
         #[cfg(target_os = "macos")]
         builder.set_use_launch_agent(false);
         let autostart = builder.build().map_err(runtime_error)?;

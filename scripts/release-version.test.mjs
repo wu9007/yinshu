@@ -59,6 +59,7 @@ test('MSI uses a Chinese WiX language for the 印枢 product name', () => {
 
   assert.equal(config.productName, '印枢');
   assert.equal(config.bundle.windows.wix.language, 'zh-CN');
+  assert.equal(config.bundle.windows.webviewInstallMode.type, 'offlineInstaller');
 });
 
 test('release workflow ad-hoc signs macOS when Apple certificate is missing', () => {

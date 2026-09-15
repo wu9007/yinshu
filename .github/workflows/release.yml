@@ -45,6 +45,7 @@ jobs:
           scripts/prepare-windows-cli.test.mjs
           scripts/release-version.test.mjs
           scripts/release.test.mjs
+          scripts/label-release-assets.test.mjs
 
   prepare-release:
     needs: quality
@@ -221,6 +222,11 @@ jobs:
           prerelease: ${{ steps.release_version.outputs.prerelease }}
           args: ${{ matrix.args }}
 
+      - name: Label release installers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/label-release-assets.mjs upload --tag "${{ needs.prepare-release.outputs.tag }}"
+
       - name: Use an MSI-compatible prerelease version
         if: matrix.extra_msi
         shell: bash
@@ -262,6 +268,12 @@ jobs:
           prerelease: ${{ steps.release_version.outputs.prerelease }}
           args: --target x86_64-pc-windows-msvc --bundles msi
 
+      - name: Label Windows MSI
+        if: matrix.extra_msi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/label-release-assets.mjs upload --tag "${{ needs.prepare-release.outputs.tag }}"
+
   publish-headless:
     needs: prepare-release
     strategy:
@@ -295,6 +307,7 @@ jobs:
         shell: bash
         run: |
           gh release upload "${{ needs.prepare-release.outputs.tag }}" target/packages/* --clobber
+          node scripts/label-release-assets.mjs upload --tag "${{ needs.prepare-release.outputs.tag }}"
 
   publish-release:
     needs: [prepare-release, publish-tauri, publish-headless]

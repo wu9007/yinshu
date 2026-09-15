@@ -40,6 +40,36 @@ const fn should_show_main_window_on_reopen(has_visible_windows: bool) -> bool {
     !has_visible_windows
 }
 
+fn should_show_main_window_on_launch(args: &[String]) -> bool {
+    !args.iter().any(|arg| {
+        matches!(
+            arg.as_str(),
+            "--from-autostart" | "--hidden" | "--minimized"
+        )
+    })
+}
+
+fn startup_error_log_path() -> std::path::PathBuf {
+    std::env::temp_dir().join("yinshu-startup-error.txt")
+}
+
+fn report_startup_error(message: &str) {
+    let path = startup_error_log_path();
+    let _ = std::fs::write(&path, format!("{message}\n"));
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "", "notepad.exe"])
+            .arg(&path)
+            .status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        eprintln!("{message}");
+    }
+}
+
 /// 原生 WebView fallback 已因无法统一证明其资源隔离而禁用。
 #[cfg(test)]
 const fn uses_gui_webview_fallback(mode: RuntimeMode, platform: RuntimePlatform) -> bool {
@@ -62,45 +92,56 @@ fn existing_agent_startup_error(status: agent_guard::AgentPortStatus) -> Option<
     }
 }
 
+fn setup_desktop(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let app_config_dir = app.path().app_config_dir()?;
+    std::fs::create_dir_all(&app_config_dir)?;
+    let config_path = app_config_dir.join("config.json");
+    let config = AgentConfig::load(&config_path)?;
+    tray::setup_tray(app, config.app.language)?;
+    #[cfg(target_os = "macos")]
+    app.set_dock_visibility(false);
+    let printing = print_backend(app)?;
+    let paths = RuntimePaths::new(
+        config_path,
+        app_config_dir.clone(),
+        app_config_dir.join("run"),
+    );
+    let runtime = RuntimeBuilder::new(paths)
+        .print_backend(printing)
+        .build()
+        .map_err(std::io::Error::other)?;
+    let handle = tauri::async_runtime::block_on(runtime.start()).map_err(std::io::Error::other)?;
+    let state: AgentState = handle.state();
+    let executor: Arc<dyn CommandExecutor> = Arc::new(RuntimeCommandExecutor::new(
+        state.clone(),
+        handle.listen_addr(),
+    ));
+    app.manage(Arc::new(CommandService::new(
+        Some(executor.clone()),
+        executor,
+    )));
+    app.manage(state);
+    app.manage(handle);
+    Ok(())
+}
+
 /// 启动 Tauri 应用、本地服务和后台打印 worker。
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_autostart::Builder::new().build())
-        .setup(|app| {
-            let app_config_dir = app.path().app_config_dir()?;
-            std::fs::create_dir_all(&app_config_dir)?;
-            let config_path = app_config_dir.join("config.json");
-            let config = AgentConfig::load(&config_path)?;
-            tray::setup_tray(app, config.app.language)?;
-            #[cfg(target_os = "macos")]
-            app.set_dock_visibility(false);
-            let printing = print_backend(app)?;
-            let paths = RuntimePaths::new(
-                config_path,
-                app_config_dir.clone(),
-                app_config_dir.join("run"),
-            );
-            let runtime = RuntimeBuilder::new(paths)
-                .print_backend(printing)
-                .build()
-                .map_err(std::io::Error::other)?;
-            let handle =
-                tauri::async_runtime::block_on(runtime.start()).map_err(std::io::Error::other)?;
-            let state: AgentState = handle.state();
-            let executor: Arc<dyn CommandExecutor> = Arc::new(RuntimeCommandExecutor::new(
-                state.clone(),
-                handle.listen_addr(),
-            ));
-            app.manage(Arc::new(CommandService::new(
-                Some(executor.clone()),
-                executor,
-            )));
-            app.manage(state);
-            app.manage(handle);
-            Ok(())
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .arg("--from-autostart")
+                .build(),
+        )
+        .setup(|app| match setup_desktop(app) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                report_startup_error(&error.to_string());
+                Err(error)
+            }
         })
         .on_window_event(|window, event| {
             if window.label() == "main" {
@@ -128,18 +169,29 @@ pub fn run() {
             commands::get_lan_address,
             commands::print_test
         ])
-        .build(tauri::generate_context!())
-        .expect("error while building tauri application");
+        .build(tauri::generate_context!());
+    let app = match app {
+        Ok(app) => app,
+        Err(error) => {
+            report_startup_error(&error.to_string());
+            return;
+        }
+    };
 
-    app.run(|_app, _event| {
+    app.run(|app, event| {
+        if let tauri::RunEvent::Ready = event {
+            if should_show_main_window_on_launch(&std::env::args().collect::<Vec<_>>()) {
+                tray::show_main_window(app);
+            }
+        }
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Reopen {
             has_visible_windows,
             ..
-        } = _event
+        } = event
         {
             if should_show_main_window_on_reopen(has_visible_windows) {
-                tray::show_main_window(_app);
+                tray::show_main_window(app);
             }
         }
     });
@@ -171,6 +223,31 @@ fn print_backend(app: &tauri::App) -> tauri::Result<Box<dyn printing::PrintBacke
 mod tests {
     use super::*;
     use crate::agent_guard::{AgentPortStatus, RunningAgent};
+
+    #[test]
+    fn startup_error_log_uses_a_stable_temp_file() {
+        assert_eq!(
+            startup_error_log_path().file_name().unwrap(),
+            "yinshu-startup-error.txt"
+        );
+    }
+
+    #[test]
+    fn user_launch_shows_main_window() {
+        assert!(should_show_main_window_on_launch(&["yinshu".into()]));
+    }
+
+    #[test]
+    fn autostart_launch_stays_in_tray() {
+        assert!(!should_show_main_window_on_launch(&[
+            "yinshu".into(),
+            "--from-autostart".into()
+        ]));
+        assert!(!should_show_main_window_on_launch(&[
+            "yinshu".into(),
+            "--hidden".into()
+        ]));
+    }
 
     #[cfg(target_os = "macos")]
     #[test]
