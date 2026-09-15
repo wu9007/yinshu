@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { isPrerelease, toLinuxPackageVersion } from './release-version.mjs';
+import { isPrerelease, toLinuxPackageVersion, toReleaseTag } from './release-version.mjs';
 
 test('stable versions remain stable Linux package versions', () => {
   assert.equal(toLinuxPackageVersion('0.2.0'), '0.2.0');
@@ -12,6 +12,24 @@ test('stable versions remain stable Linux package versions', () => {
 test('SemVer prerelease versions sort before the final Linux package version', () => {
   assert.equal(toLinuxPackageVersion('0.2.0-dev.1'), '0.2.0~dev.1');
   assert.equal(isPrerelease('0.2.0-dev.1'), true);
+});
+
+test('release tags drop a trailing .0 patch', () => {
+  assert.equal(toReleaseTag('1.0.0'), 'v1.0');
+  assert.equal(toReleaseTag('1.0.1'), 'v1.0.1');
+  assert.equal(toReleaseTag('1.1.0'), 'v1.1');
+  assert.equal(toReleaseTag('1.0.0-rc.1'), 'v1.0-rc.1');
+});
+
+test('release workflow builds from v* tags on main', () => {
+  const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
+
+  assert.match(workflow, /tags:\n\s+- 'v\*'/);
+  assert.doesNotMatch(workflow, /workflow_dispatch/);
+  assert.doesNotMatch(workflow, /branches:\n\s+- release/);
+  assert.doesNotMatch(workflow, /yinshu-v/);
+  assert.match(workflow, /release-version\.mjs tag/);
+  assert.match(workflow, /Tag must point at a commit on main/);
 });
 
 test('release workflow marks SemVer prereleases as GitHub prereleases', () => {

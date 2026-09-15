@@ -1,10 +1,9 @@
 name: release
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - release
+    tags:
+      - 'v*'
 
 jobs:
   quality:
@@ -34,6 +33,11 @@ jobs:
       - run: pnpm --dir apps/desktop lint
       - run: pnpm --dir apps/desktop test
       - run: pnpm --dir apps/desktop build
+      - run: >-
+          node --test
+          scripts/prepare-windows-cli.test.mjs
+          scripts/release-version.test.mjs
+          scripts/release.test.mjs
 
   prepare-release:
     needs: quality
@@ -44,14 +48,27 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - name: Create GitHub release
         id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "Tag must point at a commit on main"
+            exit 1
+          fi
+
           VERSION="$(node -p "JSON.parse(require('fs').readFileSync('apps/desktop/package.json', 'utf8')).version")"
-          TAG="yinshu-v${VERSION}"
+          TAG="${GITHUB_REF_NAME}"
+          EXPECTED="$(node scripts/release-version.mjs tag "$VERSION")"
+          if [ "$TAG" != "$EXPECTED" ]; then
+            echo "Tag $TAG does not match version $VERSION (expected $EXPECTED)"
+            exit 1
+          fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -63,7 +80,7 @@ jobs:
             "$TAG"
             --repo "$GITHUB_REPOSITORY"
             --target "$GITHUB_SHA"
-            --title "印枢 v${VERSION}"
+            --title "印枢 ${TAG}"
             --notes "See the assets to download and install this version."
             --draft
           )
@@ -216,8 +233,8 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ startsWith(matrix.platform, 'macos') && secrets.APPLE_SIGNING_IDENTITY || '' }}
         with:
           projectPath: apps/desktop
-          tagName: yinshu-v${{ steps.release_version.outputs.version }}
-          releaseName: 印枢 v${{ steps.release_version.outputs.version }}
+          tagName: ${{ needs.prepare-release.outputs.tag }}
+          releaseName: 印枢 ${{ needs.prepare-release.outputs.tag }}
           releaseBody: See the assets to download and install this version.
           releaseDraft: true
           prerelease: ${{ steps.release_version.outputs.prerelease }}

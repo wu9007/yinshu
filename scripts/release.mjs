@@ -3,9 +3,10 @@ import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
+import { toReleaseTag } from './release-version.mjs';
+
 const REPO = 'wu9007/yinshu';
 const WORKFLOW = 'release.yml';
-const TAG_PREFIX = 'yinshu-v';
 
 const args = process.argv.slice(2);
 let dryRun = false;
@@ -68,10 +69,11 @@ async function releaseApp() {
   }
 
   const version = versions.packageJson;
-  const releaseTag = `${TAG_PREFIX}${version}`;
+  const releaseTag = toReleaseTag(version);
+  const branch = run('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
 
-  if (tagExists(releaseTag)) {
-    fail(`Tag ${releaseTag} already exists.`);
+  if (!dryRun && branch !== 'main') {
+    fail(`Releases must be tagged from main (current branch: ${branch}).`);
   }
 
   console.log('Release target: YinShu desktop + headless server');
@@ -80,18 +82,23 @@ async function releaseApp() {
   console.log(`Current app version: ${version}`);
   console.log(`Release tag: ${releaseTag}`);
   console.log(`Workflow: ${WORKFLOW}`);
-  console.log('Command: git push origin HEAD:release');
+  console.log(`Command: git tag ${releaseTag} && git push origin ${releaseTag}`);
 
   if (dryRun) {
-    console.log('Dry run only; release branch was not pushed.');
+    console.log('Dry run only; tag was not created or pushed.');
     return;
   }
 
-  ensureCleanWorktree();
-  await confirmOrExit(`Confirm pushing HEAD to origin/release for ${releaseTag}? [y/N] `);
+  if (tagExists(releaseTag)) {
+    fail(`Tag ${releaseTag} already exists.`);
+  }
 
-  run('git', ['push', 'origin', 'HEAD:release'], { stdio: 'inherit' });
-  console.log(`Pushed HEAD to origin/release; ${WORKFLOW} will create ${releaseTag}.`);
+  ensureCleanWorktree();
+  await confirmOrExit(`Confirm tagging HEAD as ${releaseTag} on main and pushing it? [y/N] `);
+
+  run('git', ['tag', releaseTag], { stdio: 'inherit' });
+  run('git', ['push', 'origin', releaseTag], { stdio: 'inherit' });
+  console.log(`Pushed ${releaseTag}; ${WORKFLOW} will build and publish it.`);
 }
 
 function readAppVersions() {
@@ -134,7 +141,7 @@ function ensureCleanWorktree() {
 }
 
 function fetchReleaseTags() {
-  run('git', ['fetch', '--quiet', 'origin', `+refs/tags/${TAG_PREFIX}*:refs/tags/${TAG_PREFIX}*`]);
+  run('git', ['fetch', '--quiet', 'origin', '+refs/tags/v*:refs/tags/v*']);
 }
 
 function tagExists(tag) {
@@ -177,13 +184,12 @@ function printHelp() {
 Release target: YinShu desktop installers and Linux headless deb/rpm artifacts.
 
 This script validates that apps/desktop/package.json,
-apps/desktop/src-tauri/tauri.conf.json, and apps/desktop/src-tauri/Cargo.toml
-use the same version, then pushes the current commit to
-origin/release. The existing GitHub Actions workflow creates the release tag
-with the yinshu-vX.Y.Z format.
+apps/desktop/src-tauri/tauri.conf.json, and the workspace Cargo.toml
+use the same version, then tags the current main commit and pushes
+that tag. 1.0.0 becomes v1.0. GitHub Actions builds and publishes it.
 
 Options:
-  --dry-run             Print the release command without pushing
+  --dry-run             Print the release command without tagging
   -y, --yes             Skip the confirmation prompt
   --skip-fetch          Do not fetch release tags before checking
   -h, --help            Show this help

@@ -81,6 +81,7 @@ jobs:
           node --test
           scripts/prepare-windows-cli.test.mjs
           scripts/release-version.test.mjs
+          scripts/release.test.mjs
 
   check-windows:
     runs-on: windows-latest

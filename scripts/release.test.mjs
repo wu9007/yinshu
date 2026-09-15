@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { toReleaseTag } from './release-version.mjs';
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const scriptPath = resolve(repoRoot, 'scripts/release.mjs');
 const packageVersion = JSON.parse(
@@ -41,9 +43,13 @@ test('dry run prints app release command without pushing', () => {
   const result = runRelease(['--', '--dry-run', '--skip-fetch']);
 
   assert.equal(result.status, 0);
+  const releaseTag = toReleaseTag(packageVersion);
   assert.match(result.stdout, new RegExp(`Current app version: ${escapeRegExp(packageVersion)}`));
-  assert.match(result.stdout, new RegExp(`Release tag: yinshu-v${escapeRegExp(packageVersion)}`));
-  assert.match(result.stdout, /Command: git push origin HEAD:release/);
+  assert.match(result.stdout, new RegExp(`Release tag: ${escapeRegExp(releaseTag)}`));
+  assert.match(
+    result.stdout,
+    new RegExp(`Command: git tag ${escapeRegExp(releaseTag)} && git push origin ${escapeRegExp(releaseTag)}`),
+  );
   assert.match(result.stdout, /headless \.deb and \.rpm/);
   assert.match(result.stdout, /Dry run only/);
 });
