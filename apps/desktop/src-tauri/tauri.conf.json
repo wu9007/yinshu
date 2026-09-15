@@ -16,7 +16,7 @@
         "label": "main",
         "title": "",
         "width": 480,
-        "height": 640,
+        "height": 720,
         "minWidth": 440,
         "minHeight": 560,
         "maximizable": true,
