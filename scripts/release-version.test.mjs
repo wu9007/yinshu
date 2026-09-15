@@ -54,6 +54,25 @@ test('README OS table matches CI-backed platforms', () => {
   assert.match(backlogEn, /not supported/);
 });
 
+test('MSI uses a Chinese WiX language for the 印枢 product name', () => {
+  const config = JSON.parse(readFileSync('apps/desktop/src-tauri/tauri.conf.json', 'utf8'));
+
+  assert.equal(config.productName, '印枢');
+  assert.equal(config.bundle.windows.wix.language, 'zh-CN');
+});
+
+test('release workflow ad-hoc signs macOS when Apple certificate is missing', () => {
+  const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
+  const config = JSON.parse(readFileSync('apps/desktop/src-tauri/tauri.conf.json', 'utf8'));
+
+  assert.equal(config.bundle.macOS.signingIdentity, '-');
+  assert.match(workflow, /APPLE_SIGNING_IDENTITY=-/);
+  assert.doesNotMatch(
+    workflow,
+    /APPLE_SIGNING_IDENTITY: \$\{\{\s*startsWith\(matrix\.platform, 'macos'\) && secrets\.APPLE_SIGNING_IDENTITY/,
+  );
+});
+
 test('release workflow builds from v* tags on main', () => {
   const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
 
