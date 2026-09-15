@@ -66,6 +66,8 @@ test('release workflow builds from v* tags on main', () => {
   assert.match(workflow, /swatinem\/rust-cache@v2/);
   assert.match(workflow, /CARGO_BUILD_JOBS: "1"/);
   assert.match(workflow, /CARGO_PROFILE_TEST_DEBUG: "0"/);
+  assert.doesNotMatch(workflow, /cargo check --workspace/);
+  assert.doesNotMatch(workflow, /pnpm --dir apps\/desktop build/);
 });
 
 test('release workflow marks SemVer prereleases as GitHub prereleases', () => {
@@ -84,13 +86,15 @@ test('desktop and headless publishing are independent after release preparation'
   assert.doesNotMatch(workflow, /publish-headless:\n\s+needs: publish-tauri/);
 });
 
-test('release workflow installs AppImage tools and separates NSIS from MSI', () => {
+test('release workflow installs AppImage tools and builds NSIS then MSI on one Windows runner', () => {
   const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
 
   assert.match(workflow, /xdg-utils/);
   assert.match(workflow, /--bundles nsis\n/);
   assert.match(workflow, /--bundles msi\n/);
   assert.doesNotMatch(workflow, /--bundles nsis,msi/);
+  assert.equal((workflow.match(/platform: windows-latest/g) || []).length, 1);
+  assert.match(workflow, /Publish Windows MSI/);
   assert.match(workflow, /Prepare Windows CLI sidecar/);
   assert.match(workflow, /prepare-windows-cli\.mjs x86_64-pc-windows-msvc/);
 });
