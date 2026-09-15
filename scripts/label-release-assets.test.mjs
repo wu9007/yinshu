@@ -3,8 +3,10 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
+  githubAssetNames,
   labelReleaseAssetName,
   newestBundlePathByName,
+  releaseNameCandidates,
   selectReleaseAssetsToRelabel,
 } from './label-release-assets.mjs';
 
@@ -91,10 +93,35 @@ test('upload only relabels assets already on the GitHub release', () => {
   ]);
 });
 
-test('upload refuses to label a release asset that is not on disk', () => {
-  assert.throws(
-    () => selectReleaseAssetsToRelabel(['印枢_1.0.1_x64-setup.exe'], []),
-    /印枢_1\.0\.1_x64-setup\.exe is not in the local bundle directory/,
+test('upload skips other platforms and leftover draft assets', () => {
+  assert.deepEqual(
+    selectReleaseAssetsToRelabel(
+      ['yinshu-server-1.0.0-1.aarch64.rpm', '印枢_1.0.0_x64-setup.exe'],
+      ['印枢_1.0.0_aarch64.dmg'],
+    ),
+    [],
+  );
+});
+
+test('upload matches GitHub names that dropped the 印枢 prefix', () => {
+  assert.deepEqual(releaseNameCandidates('印枢_1.0.0_aarch64.dmg'), [
+    '印枢_1.0.0_aarch64.dmg',
+    '_1.0.0_aarch64.dmg',
+  ]);
+  assert.deepEqual(
+    selectReleaseAssetsToRelabel(['_1.0.0_aarch64.dmg'], ['印枢_1.0.0_aarch64.dmg']),
+    [
+      {
+        current: '印枢_1.0.0_aarch64.dmg',
+        labeled: '印枢-1.0.0-macOS-AppleSilicon.dmg',
+      },
+    ],
+  );
+  assert.deepEqual(
+    githubAssetNames([
+      { name: '_1.0.0_aarch64.dmg', label: '印枢_1.0.0_aarch64.dmg' },
+    ]),
+    ['_1.0.0_aarch64.dmg', '印枢_1.0.0_aarch64.dmg'],
   );
 });
 

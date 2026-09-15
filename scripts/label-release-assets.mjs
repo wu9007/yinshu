@@ -71,18 +71,30 @@ export function newestBundlePathByName(paths, mtimeMsByPath) {
   return new Map([...byName].map(([name, value]) => [name, value.path]));
 }
 
-/** Only rename assets that tauri-action already uploaded to this tag. */
+/** GitHub sometimes stores `印枢_1.0.0_x64.dmg` as `_1.0.0_x64.dmg`. */
+export function releaseNameCandidates(filename) {
+  return filename.startsWith('印枢') ? [filename, filename.slice('印枢'.length)] : [filename];
+}
+
+/** Collect `name` and `label` from `gh release view --json assets`. */
+export function githubAssetNames(assets) {
+  return (assets ?? []).flatMap((asset) =>
+    [asset.name, asset.label].filter((name) => typeof name === 'string' && name.length > 0),
+  );
+}
+
+/** Relabel local bundles that this tag already has; skip other matrix leftovers. */
 export function selectReleaseAssetsToRelabel(releaseAssetNames, localNames) {
-  const local = new Set(localNames);
+  const release = new Set(releaseAssetNames);
   const selected = [];
   const seenLabeled = new Set();
-  for (const current of releaseAssetNames) {
+  for (const current of localNames) {
     const labeled = labelReleaseAssetName(current);
     if (!labeled || labeled === current || seenLabeled.has(labeled)) {
       continue;
     }
-    if (!local.has(current)) {
-      throw new Error(`release asset ${current} is not in the local bundle directory`);
+    if (!releaseNameCandidates(current).some((name) => release.has(name))) {
+      continue;
     }
     seenLabeled.add(labeled);
     selected.push({ current, labeled });
@@ -117,7 +129,7 @@ function runGh(args) {
 
 function listReleaseAssetNames(tag) {
   const release = JSON.parse(runGh(['release', 'view', tag, '--json', 'assets']));
-  return (release.assets ?? []).map((asset) => asset.name);
+  return githubAssetNames(release.assets);
 }
 
 function relabelLocalFiles(root, tag) {
@@ -128,11 +140,13 @@ function relabelLocalFiles(root, tag) {
   for (const { current, labeled } of selected) {
     const path = localByName.get(current);
     runGh(['release', 'upload', tag, `${path}#${labeled}`, '--clobber']);
-    try {
-      runGh(['release', 'delete-asset', tag, current, '--yes']);
-    } catch (error) {
-      if (!String(error).includes('not found')) {
-        throw error;
+    for (const name of releaseNameCandidates(current)) {
+      try {
+        runGh(['release', 'delete-asset', tag, name, '--yes']);
+      } catch (error) {
+        if (!String(error).includes('not found')) {
+          throw error;
+        }
       }
     }
   }
