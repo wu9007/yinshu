@@ -21,19 +21,37 @@ test('release tags drop a trailing .0 patch', () => {
   assert.equal(toReleaseTag('1.0.0-rc.1'), 'v1.0-rc.1');
 });
 
+function markdownSection(markdown, heading) {
+  const start = markdown.indexOf(heading);
+  assert.ok(start >= 0, `missing ${heading}`);
+  const rest = markdown.slice(start + heading.length);
+  const next = rest.search(/\n## /);
+  return next === -1 ? rest : rest.slice(0, next);
+}
+
 test('README OS table matches CI-backed platforms', () => {
   const readme = readFileSync('README.md', 'utf8');
   const readmeEn = readFileSync('README_en.md', 'utf8');
+  const supported = markdownSection(readme, '## 适配的操作系统');
+  const supportedEn = markdownSection(readmeEn, '## Supported operating systems');
+  const backlog = markdownSection(readme, '## 待办');
+  const backlogEn = markdownSection(readmeEn, '## Backlog');
 
-  assert.match(readme, /## 适配的操作系统/);
-  assert.match(readme, /\| Windows \| 10、11 \|/);
-  assert.doesNotMatch(readme, /Windows 7|8\.1、10/);
-  assert.match(readme, /未签名、未公证/);
-  assert.match(readme, /HTTPS 页面连不上 `ws:\/\//);
-  assert.match(readmeEn, /\| Windows \| 10, 11 \|/);
-  assert.doesNotMatch(readmeEn, /Windows 7|8\.1, 10/);
-  assert.match(readmeEn, /unsigned and not notarized/);
-  assert.match(readmeEn, /HTTPS pages cannot use `ws:\/\//);
+  assert.match(supported, /\| Windows \| 10、11 \|/);
+  assert.doesNotMatch(supported, /Windows 7|8\.1/);
+  assert.match(supported, /未签名、未公证/);
+  assert.match(supported, /HTTPS 页面连不上 `ws:\/\//);
+  assert.match(supportedEn, /\| Windows \| 10, 11 \|/);
+  assert.doesNotMatch(supportedEn, /Windows 7|8\.1/);
+  assert.match(supportedEn, /unsigned and not notarized/);
+  assert.match(supportedEn, /HTTPS pages cannot use `ws:\/\//);
+
+  assert.match(backlog, /Windows 7/);
+  assert.match(backlog, /麒麟/);
+  assert.match(backlog, /没有安装包/);
+  assert.match(backlogEn, /Windows 7/);
+  assert.match(backlogEn, /Kylin/);
+  assert.match(backlogEn, /not supported/);
 });
 
 test('release workflow builds from v* tags on main', () => {

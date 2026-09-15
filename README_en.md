@@ -20,6 +20,14 @@ Installers are only on [Releases](https://github.com/wu9007/yinshu/releases).
 
 No 32-bit Windows. No Windows ARM builds. YinShu is installed on the workstation; phones and tablets do not install a client.
 
+## Backlog
+
+No installers, CI, or machine verification yet. These are not supported:
+
+- Windows 7, Windows 8.1
+- Kylin, Ubuntu Kylin, OpenKylin, and other domestic desktops (including webkit2gtk 4.0)
+- LoongArch
+
 <p align="center">
   <img src="screenshots/settings.png" width="360" alt="Settings" />
 </p>

@@ -20,6 +20,14 @@
 
 不提供 32 位 Windows，也不提供 Windows ARM 安装包。印枢装在工位电脑上；手机、平板不装客户端。
 
+## 待办
+
+这些系统目前没有安装包，也没有 CI 或真机验证，不承诺能装、能出纸：
+
+- Windows 7、Windows 8.1
+- 银河麒麟、优麒麟、OpenKylin 及其他国产桌面（含仍是 webkit2gtk 4.0 的版本）
+- 龙芯 LoongArch
+
 <p align="center">
   <img src="screenshots/settings.png" width="360" alt="设置" />
 </p>
