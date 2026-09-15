@@ -18,16 +18,6 @@
 | Linux 无界面 | 同上 | x64、ARM64 | deb、rpm |
 | 手机 / 平板 | iOS、Android 系统浏览器 | — | 无安装包。扫工位二维码，由已放行的网页打印。HTTPS 页面连不上 `ws://` |
 
-不提供 32 位 Windows，也不提供 Windows ARM 安装包。印枢装在工位电脑上；手机、平板不装客户端。
-
-## 待办
-
-这些系统目前没有安装包，也没有 CI 或真机验证，不承诺能装、能出纸：
-
-- Windows 7、Windows 8.1
-- 银河麒麟、优麒麟、OpenKylin 及其他国产桌面（含仍是 webkit2gtk 4.0 的版本）
-- 龙芯 LoongArch
-
 <p align="center">
   <img src="screenshots/settings.png" width="360" alt="设置" />
 </p>
@@ -71,6 +61,11 @@ yinshu ip add "192.168.1.0/24"
 ```
 
 `queued` 表示进了本机队列。`submitted` 表示已交给系统打印队列，不表示纸已经出来。协议见 [技术说明](docs/technical.md)。
+
+## 待办
+- Windows 7、Windows 8.1
+- 银河麒麟、优麒麟、OpenKylin 及其他国产桌面（含仍是 webkit2gtk 4.0 的版本）
+- 龙芯 LoongArch
 
 ## License
 
