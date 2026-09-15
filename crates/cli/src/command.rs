@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use yinshu_core::config::AgentConfig;
 use serde::{Deserialize, Serialize};
+use yinshu_core::config::AgentConfig;
 
 use crate::{config_transfer::ExportConfigOptions, CommandPolicy, ProductKind};
 
@@ -51,9 +51,7 @@ impl Command {
     /// 返回命令对运行中 Agent 的依赖策略。
     pub fn policy(&self) -> CommandPolicy {
         match self {
-            Self::GetLogs
-            | Self::TestPrint { .. }
-            | Self::Status => CommandPolicy::OnlineOnly,
+            Self::GetLogs | Self::TestPrint { .. } | Self::Status => CommandPolicy::OnlineOnly,
             Self::GetConfig
             | Self::SaveConfig(_)
             | Self::ListPrinters

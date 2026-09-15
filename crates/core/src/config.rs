@@ -271,8 +271,7 @@ mod tests {
     fn cli_config_path_prefers_config_path_override() {
         let _lock = test_lock();
         let data_dir = std::env::temp_dir().join(format!("yinshu-data-{}", Uuid::new_v4()));
-        let config_path =
-            std::env::temp_dir().join(format!("yinshu-{}.json", Uuid::new_v4()));
+        let config_path = std::env::temp_dir().join(format!("yinshu-{}.json", Uuid::new_v4()));
         let _data_guard = set_env(DATA_DIR_OVERRIDE_ENV, &data_dir);
         let _config_guard = set_env(CONFIG_PATH_OVERRIDE_ENV, &config_path);
 

@@ -2,8 +2,7 @@ use super::{
     common_label_papers, cups_media_option, paper_name, resolve_paper_for_print,
     submitted_at_rfc3339, PaperInfo, PrintBackend, PrintError, PrintOptions, PrintResult,
     PrintSubmission, PrintTrackingOutcome, PrinterAvailability, PrinterInfo, PrinterMediaTypeInfo,
-    PrinterTrayInfo,
-    RawPrintOptions,
+    PrinterTrayInfo, RawPrintOptions,
 };
 use std::{collections::HashMap, io::Write, path::Path, process::Command};
 
@@ -60,7 +59,10 @@ fn attribute_value<'a>(output: &'a str, key: &str) -> Option<&'a str> {
     if let Some(quoted) = rest.strip_prefix('\'') {
         return quoted.split('\'').next();
     }
-    let end = rest.find(" printer-").or_else(|| rest.find('\n')).unwrap_or(rest.len());
+    let end = rest
+        .find(" printer-")
+        .or_else(|| rest.find('\n'))
+        .unwrap_or(rest.len());
     Some(rest[..end].trim())
 }
 
@@ -747,8 +749,8 @@ mod tests {
         parse_cups_printer_availability, parse_default_destination, parse_lp_job_id,
         parse_lpoptions_dpi, parse_lpoptions_media_types, parse_lpoptions_papers,
         parse_lpoptions_trays, parse_lpstat_destinations, parse_lpstat_devices,
-        printer_availability_from_lpoptions, CupsPrintBackend,
-        CupsPrinterAvailability, PrinterAvailability,
+        printer_availability_from_lpoptions, CupsPrintBackend, CupsPrinterAvailability,
+        PrinterAvailability,
     };
     use crate::printing::{PrintError, PrintSubmission};
     use std::cell::RefCell;
@@ -853,7 +855,10 @@ mod tests {
         .unwrap_err();
 
         assert!(matches!(error, PrintError::PrinterOffline));
-        assert_eq!(cancelled.into_inner().as_deref(), Some("CITIZEN_CL_S700-200"));
+        assert_eq!(
+            cancelled.into_inner().as_deref(),
+            Some("CITIZEN_CL_S700-200")
+        );
     }
 
     #[test]

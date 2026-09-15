@@ -135,14 +135,9 @@ async fn printer_cli_uses_shared_list_printers_command() {
     let executor: Arc<dyn CommandExecutor> = Arc::new(Recorder(commands.clone()));
     let service = Arc::new(CommandService::new(None, executor));
 
-    let output = run_cli_from(
-        ["yinshu", "printer"],
-        service,
-        product(),
-        interaction(),
-    )
-    .await
-    .unwrap();
+    let output = run_cli_from(["yinshu", "printer"], service, product(), interaction())
+        .await
+        .unwrap();
 
     assert_eq!(output.exit_code, 0);
     assert_eq!(*commands.lock().unwrap(), vec![Command::ListPrinters]);

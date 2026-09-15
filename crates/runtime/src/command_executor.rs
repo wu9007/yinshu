@@ -9,10 +9,7 @@ use yinshu_cli::{
     AgentStatus, Command, CommandError, CommandErrorKind, CommandExecutor, CommandResult,
 };
 
-use crate::{
-    config::AgentConfig, state::AgentState,
-    test_print::print_test_page_with_config,
-};
+use crate::{config::AgentConfig, state::AgentState, test_print::print_test_page_with_config};
 
 /// 使用运行中 AgentState 执行共享功能命令。
 pub struct RuntimeCommandExecutor {

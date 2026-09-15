@@ -1,8 +1,8 @@
+use std::str::FromStr;
 use yinshu_lib::protocol::{
     is_allowed_origin, validate_file_url, validate_origin, ClientMessage, EffectivePaper,
     ErrorCode, JobStatus, JobValidationError, PrintJobInput, ServerMessage, SupportedFormat,
 };
-use std::str::FromStr;
 
 #[test]
 fn supported_format_accepts_pdf_image_and_legacy_image_subtypes() {

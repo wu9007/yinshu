@@ -79,8 +79,15 @@ pub async fn print_test_page_with_config(
     let path = test_page_temp_path();
     let paper_label = paper_name(paper.width_mm, paper.height_mm);
     let job_id = uuid::Uuid::new_v4().to_string();
-    let result =
-        print_test_page_inner(state, &config, &printer_name, paper, printer.as_ref(), &path).await;
+    let result = print_test_page_inner(
+        state,
+        &config,
+        &printer_name,
+        paper,
+        printer.as_ref(),
+        &path,
+    )
+    .await;
     let _ = std::fs::remove_file(&path);
     if !matches!(
         result,
@@ -175,10 +182,7 @@ fn test_page_lines(
         format!("Host    {}", empty_as_dash(&device.hostname)),
         format!("User    {}", empty_as_dash(&device.username)),
         format!("OS      {}", empty_as_dash(&device.os)),
-        format!(
-            "LAN     {}",
-            device.local_ip.as_deref().unwrap_or("-")
-        ),
+        format!("LAN     {}", device.local_ip.as_deref().unwrap_or("-")),
         String::new(),
         format!("Port    {}", config.service.port),
         format!("Printer {}", printer_name),
@@ -301,10 +305,7 @@ fn current_printed_at() -> String {
 }
 
 fn test_page_temp_path() -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "yinshu-test-page-{}.pdf",
-        uuid::Uuid::new_v4()
-    ))
+    std::env::temp_dir().join(format!("yinshu-test-page-{}.pdf", uuid::Uuid::new_v4()))
 }
 
 fn paper_info_from_effective(paper: &EffectivePaper) -> PaperInfo {
@@ -379,15 +380,29 @@ mod tests {
             availability: Default::default(),
         };
 
-        let lines = test_page_lines(&config, "Zebra_GX430t", &paper, &sample_device(), Some(&printer));
+        let lines = test_page_lines(
+            &config,
+            "Zebra_GX430t",
+            &paper,
+            &sample_device(),
+            Some(&printer),
+        );
 
         assert!(lines.iter().all(|line| !line.contains("YinShu")));
-        assert!(lines.iter().any(|line| line.contains("Host    studio.local")));
-        assert!(lines.iter().any(|line| line.contains("LAN     192.168.1.23")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("Host    studio.local")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("LAN     192.168.1.23")));
         assert!(lines.iter().any(|line| line.contains("Port    17890")));
-        assert!(lines.iter().any(|line| line.contains("Printer Zebra_GX430t")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("Printer Zebra_GX430t")));
         assert!(lines.iter().any(|line| line.contains("Paper   60 x 40 mm")));
-        assert!(lines.iter().any(|line| line.contains("Web     https://erp.example.com")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("Web     https://erp.example.com")));
         assert!(lines.iter().all(|line| !line.starts_with("Allow ")));
         assert!(lines.iter().any(|line| line.contains("DPI     203")));
         assert!(lines.iter().any(|line| line.contains("PPort   USB001")));
@@ -396,8 +411,9 @@ mod tests {
     #[tokio::test]
     async fn test_print_writes_submitted_history() {
         let config = test_print_config();
-        let state = AgentState::with_printing(config.clone(), Box::new(TestPrintBackend::Submitted))
-            .with_task_history_store(TaskHistoryStore::open_in_memory().unwrap());
+        let state =
+            AgentState::with_printing(config.clone(), Box::new(TestPrintBackend::Submitted))
+                .with_task_history_store(TaskHistoryStore::open_in_memory().unwrap());
 
         print_test_page_with_config(&state, config).await.unwrap();
 

@@ -5,13 +5,13 @@ use std::{
     sync::Arc,
 };
 
+use tokio::net::{UnixListener, UnixStream};
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use yinshu_cli::{
     client::{read_frame, write_frame, CommandRequest, CommandResponse, IPC_PROTOCOL_VERSION},
     CommandError, CommandErrorKind, CommandExecutor,
 };
-use tokio::net::{UnixListener, UnixStream};
-use tokio::task::JoinHandle;
-use tokio_util::sync::CancellationToken;
 
 /// 返回 runtime 目录内稳定的 Agent socket 路径。
 pub fn socket_path(runtime_dir: &Path) -> PathBuf {

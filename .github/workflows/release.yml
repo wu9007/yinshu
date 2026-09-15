@@ -32,6 +32,7 @@ jobs:
       - run: cargo test --workspace
       - run: pnpm --dir apps/desktop typecheck
       - run: pnpm --dir apps/desktop lint
+      - run: pnpm --dir apps/desktop test
       - run: pnpm --dir apps/desktop build
 
   prepare-release:
@@ -77,26 +78,31 @@ jobs:
       contents: write
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
         include:
           - platform: macos-latest
             args: --target aarch64-apple-darwin
+            rust_targets: aarch64-apple-darwin
             msi_version: false
           - platform: macos-15-intel
             args: --target x86_64-apple-darwin
+            rust_targets: x86_64-apple-darwin
             msi_version: false
           - platform: ubuntu-22.04
             args: --target x86_64-unknown-linux-gnu --bundles deb,rpm,appimage
+            rust_targets: x86_64-unknown-linux-gnu
             msi_version: false
           - platform: ubuntu-22.04-arm
             args: --target aarch64-unknown-linux-gnu --bundles deb,rpm,appimage
+            rust_targets: aarch64-unknown-linux-gnu
             msi_version: false
           - platform: windows-latest
             args: --target x86_64-pc-windows-msvc --bundles nsis
+            rust_targets: x86_64-pc-windows-msvc
             msi_version: false
           - platform: windows-latest
             args: --target x86_64-pc-windows-msvc --bundles msi
+            rust_targets: x86_64-pc-windows-msvc
             msi_version: true
 
     runs-on: ${{ matrix.platform }}
@@ -118,7 +124,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ startsWith(matrix.platform, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.rust_targets }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -182,6 +188,10 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "APPLE_CERTIFICATE is not set; macOS artifacts will be unsigned"
+            exit 0
+          fi
           CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           echo -n "$APPLE_CERTIFICATE" | base64 --decode -o "$CERTIFICATE_PATH"
@@ -207,7 +217,7 @@ jobs:
         with:
           projectPath: apps/desktop
           tagName: yinshu-v${{ steps.release_version.outputs.version }}
-          releaseName: YinShu v${{ steps.release_version.outputs.version }}
+          releaseName: 印枢 v${{ steps.release_version.outputs.version }}
           releaseBody: See the assets to download and install this version.
           releaseDraft: true
           prerelease: ${{ steps.release_version.outputs.prerelease }}
@@ -231,6 +241,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
       - name: Install package tools
         run: sudo apt-get update && sudo apt-get install -y rpm
       - name: Build headless packages
@@ -244,3 +256,15 @@ jobs:
         shell: bash
         run: |
           gh release upload "${{ needs.prepare-release.outputs.tag }}" target/packages/* --clobber
+
+  publish-release:
+    needs: [prepare-release, publish-tauri, publish-headless]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ needs.prepare-release.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --draft=false

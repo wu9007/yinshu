@@ -215,8 +215,7 @@ async fn print_html_job(
         }
         _ => return Err(ProcessJobError::UnsupportedFormat),
     };
-    let output_path =
-        std::env::temp_dir().join(format!("yinshu-html-{}.pdf", Uuid::new_v4()));
+    let output_path = std::env::temp_dir().join(format!("yinshu-html-{}.pdf", Uuid::new_v4()));
     let request = HtmlRenderRequest {
         source,
         allowed_loopback_origin: queued_job

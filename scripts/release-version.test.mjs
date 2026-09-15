@@ -41,12 +41,17 @@ test('release workflow installs AppImage tools and separates NSIS from MSI', () 
   assert.match(workflow, /prepare-windows-cli\.mjs x86_64-pc-windows-msvc/);
 });
 
-test('release workflow keeps the release as a draft until manual publication', () => {
+test('release workflow publishes after desktop and headless artifacts upload', () => {
   const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
 
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /ARGS=\([\s\S]*--draft/);
   assert.match(workflow, /releaseDraft: true/);
+  assert.match(
+    workflow,
+    /publish-release:\n\s+needs: \[prepare-release, publish-tauri, publish-headless\]/,
+  );
+  assert.match(workflow, /gh release edit "\$\{\{ needs\.prepare-release\.outputs\.tag \}\}"[\s\S]*--draft=false/);
 });
 
 test('headless packaging uses the normalized Linux package version', () => {

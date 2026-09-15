@@ -4,12 +4,12 @@ use aes_gcm::{
 };
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use yinshu_core::{config::AgentConfig, ip_whitelist::validate_allowed_ip_entry};
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{fs, io, path::Path};
 use thiserror::Error;
+use yinshu_core::{config::AgentConfig, ip_whitelist::validate_allowed_ip_entry};
 use zeroize::Zeroize;
 
 const ENCRYPTED_FORMAT: &str = "yinshu-config-encrypted";
@@ -193,10 +193,7 @@ pub fn build_transfer_payload(
     ConfigTransferPayload {
         format: PAYLOAD_FORMAT.to_string(),
         version: TRANSFER_VERSION,
-        config: PartialTransferConfig {
-            service,
-            security,
-        },
+        config: PartialTransferConfig { service, security },
     }
 }
 
@@ -581,7 +578,10 @@ mod tests {
         let merged = merge_payload(&current, &payload).unwrap();
 
         assert_eq!(merged.service.port, current.service.port);
-        assert_eq!(merged.security.allowed_origins, current.security.allowed_origins);
+        assert_eq!(
+            merged.security.allowed_origins,
+            current.security.allowed_origins
+        );
     }
 
     #[test]

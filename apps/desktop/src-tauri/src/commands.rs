@@ -4,14 +4,14 @@ use crate::{
     task_history::{TaskHistoryEvent, TaskHistoryJob},
     tray::apply_tray_language,
 };
+use std::{net::TcpListener, path::PathBuf, sync::Arc};
+use tauri::State;
+use tauri_plugin_autostart::ManagerExt;
 use yinshu_cli::{
     config_transfer::{ExportConfigOptions, ImportPreview},
     Command, CommandError, CommandResult, CommandService, DoctorReport, ProductKind,
 };
 use yinshu_core::printing::{PaperInfo, PrinterInfo};
-use std::{net::TcpListener, path::PathBuf, sync::Arc};
-use tauri::State;
-use tauri_plugin_autostart::ManagerExt;
 
 /// 返回当前 Agent 配置给 Tauri 前端。
 #[tauri::command]
@@ -73,9 +73,8 @@ pub async fn save_config(
         )?;
     }
 
-    apply_autostart(&app, config.app.autostart).map_err(|message| {
-        CommandError::new(yinshu_cli::CommandErrorKind::Runtime, message)
-    })?;
+    apply_autostart(&app, config.app.autostart)
+        .map_err(|message| CommandError::new(yinshu_cli::CommandErrorKind::Runtime, message))?;
 
     let saved = match service.execute(Command::SaveConfig(config)).await {
         Ok(CommandResult::Config(config)) => *config,
@@ -321,13 +320,13 @@ mod tests {
         },
     };
     use async_trait::async_trait;
-    use yinshu_cli::{
-        Command, CommandError, CommandExecutor, CommandResult, CommandService, DoctorCheck,
-        DoctorReport, DoctorStatus, ProductKind,
-    };
     use std::{
         fs,
         sync::{Arc, Mutex},
+    };
+    use yinshu_cli::{
+        Command, CommandError, CommandExecutor, CommandResult, CommandService, DoctorCheck,
+        DoctorReport, DoctorStatus, ProductKind,
     };
 
     struct RecordingDoctorExecutor {

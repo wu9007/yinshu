@@ -1,3 +1,5 @@
+use std::{io::ErrorKind, net::TcpListener};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use yinshu_lib::{
     html::{
         browser::{BrowserHtmlRenderer, BrowserLocator},
@@ -7,8 +9,6 @@ use yinshu_lib::{
     },
     protocol::EffectivePaper,
 };
-use std::{io::ErrorKind, net::TcpListener};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const PUBLIC_ASSETS_HTML: &str = include_str!("fixtures/html/public-assets.html");
 

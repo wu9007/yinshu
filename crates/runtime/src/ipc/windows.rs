@@ -4,15 +4,15 @@ use std::{
     sync::Arc,
 };
 
-use yinshu_cli::{
-    client::{read_frame, write_frame, CommandRequest, CommandResponse, IPC_PROTOCOL_VERSION},
-    CommandError, CommandErrorKind, CommandExecutor,
-};
 use tokio::{
     net::windows::named_pipe::{NamedPipeServer, ServerOptions},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
+use yinshu_cli::{
+    client::{read_frame, write_frame, CommandRequest, CommandResponse, IPC_PROTOCOL_VERSION},
+    CommandError, CommandErrorKind, CommandExecutor,
+};
 
 /// 返回 Windows 命名管道的稳定标识。
 pub fn socket_path(_runtime_dir: &Path) -> PathBuf {

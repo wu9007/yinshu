@@ -1,3 +1,5 @@
+use std::fs;
+use std::sync::Mutex;
 use yinshu_lib::{
     config::{
         cli_config_path, cli_task_history_path, AgentConfig, AppConfig, LimitsConfig,
@@ -6,8 +8,6 @@ use yinshu_lib::{
     },
     protocol::EffectivePaper,
 };
-use std::fs;
-use std::sync::Mutex;
 
 static ENV_TEST_MUTEX: Mutex<()> = Mutex::new(());
 
@@ -150,10 +150,8 @@ fn agent_config_loads_legacy_json_without_allowed_ips() {
 
 #[test]
 fn agent_config_load_returns_default_when_file_is_missing() {
-    let path = std::env::temp_dir().join(format!(
-        "yinshu-missing-config-{}.json",
-        std::process::id()
-    ));
+    let path =
+        std::env::temp_dir().join(format!("yinshu-missing-config-{}.json", std::process::id()));
     let _ = fs::remove_file(&path);
 
     let config = AgentConfig::load(&path).unwrap();
@@ -180,10 +178,8 @@ fn agent_config_save_and_load_roundtrips() {
 
 #[test]
 fn agent_config_load_returns_error_for_invalid_json() {
-    let path = std::env::temp_dir().join(format!(
-        "yinshu-invalid-config-{}.json",
-        std::process::id()
-    ));
+    let path =
+        std::env::temp_dir().join(format!("yinshu-invalid-config-{}.json", std::process::id()));
     fs::write(&path, "{ invalid json").unwrap();
 
     let result = AgentConfig::load(&path);
@@ -211,8 +207,7 @@ fn cli_config_path_uses_explicit_file_override() {
 fn cli_task_history_path_uses_data_dir_override() {
     let _env_lock = ENV_TEST_MUTEX.lock().unwrap();
 
-    let dir =
-        std::env::temp_dir().join(format!("yinshu-cli-data-dir-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("yinshu-cli-data-dir-{}", std::process::id()));
     let expected = dir.join("task_history.sqlite3");
     let _override_guard = EnvVarOverrideGuard::set_env_var(DATA_DIR_OVERRIDE_ENV, &dir);
 

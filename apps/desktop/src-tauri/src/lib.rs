@@ -9,8 +9,6 @@ pub use yinshu_core::{config, ip_whitelist, protocol};
 pub mod tray;
 
 use config::AgentConfig;
-use yinshu_cli::{CommandExecutor, CommandService};
-use yinshu_runtime::{RuntimeBuilder, RuntimeCommandExecutor, RuntimePaths};
 use state::AgentState;
 #[cfg(test)]
 use std::io;
@@ -18,6 +16,8 @@ use std::sync::Arc;
 #[cfg(target_os = "windows")]
 use tauri::path::BaseDirectory;
 use tauri::Manager;
+use yinshu_cli::{CommandExecutor, CommandService};
+use yinshu_runtime::{RuntimeBuilder, RuntimeCommandExecutor, RuntimePaths};
 
 #[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

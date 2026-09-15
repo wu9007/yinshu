@@ -1,11 +1,11 @@
 use std::net::SocketAddr;
 
+use serde::{Deserialize, Serialize};
 use yinshu_core::{
     activity::{TaskHistoryEvent, TaskHistoryJob, TaskLogEntry},
     config::AgentConfig,
     printing::{PaperInfo, PrinterInfo},
 };
-use serde::{Deserialize, Serialize};
 
 use crate::config_transfer::ImportPreview;
 

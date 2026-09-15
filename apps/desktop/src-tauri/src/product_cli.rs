@@ -120,9 +120,7 @@ mod tests {
     #[test]
     fn windows_cli_resolves_sibling_gui_for_autostart() {
         assert_eq!(
-            windows_gui_executable_path(Path::new(
-                r"C:\Users\me\AppData\Local\YinShu\yinshu.exe"
-            )),
+            windows_gui_executable_path(Path::new(r"C:\Users\me\AppData\Local\YinShu\yinshu.exe")),
             PathBuf::from(r"C:\Users\me\AppData\Local\YinShu\YinShu.exe")
         );
     }

@@ -1,4 +1,5 @@
 use image::{ImageBuffer, Rgb};
+use std::fs;
 use yinshu_lib::{
     document::{
         detect_format_from_bytes, fit_contain, image_to_pdf, test_page_to_pdf, DocumentFormat,
@@ -6,7 +7,6 @@ use yinshu_lib::{
     },
     protocol::EffectivePaper,
 };
-use std::fs;
 
 #[test]
 fn detect_format_from_bytes_recognizes_pdf_png_and_jpeg_signatures() {
