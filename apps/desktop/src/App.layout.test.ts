@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const api = vi.hoisted(() => ({
   exportConfigFile: vi.fn(),
+  exportDiagnostics: vi.fn(),
   fetchPapers: vi.fn(),
   fetchPrinters: vi.fn(),
   clearTaskHistory: vi.fn(),
@@ -24,7 +25,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn() }));
 vi.mock('@tauri-apps/plugin-process', () => ({ relaunch: vi.fn() }));
 vi.mock('@/onboarding', () => ({ useOnboarding: () => ({}) }));
 
-import { open } from '@tauri-apps/plugin-dialog';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import App from './App.vue';
 import { i18n, setI18nLocale } from '@/i18n';
 import type { AgentConfig, TaskHistoryJob } from '@/types';
@@ -364,6 +365,9 @@ describe('App 单页状态面板', () => {
     expect(wrapper.find('#service-port').exists()).toBe(true);
     expect(wrapper.find('[data-testid="export-config"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="import-config"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="export-diagnostics"]').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain('yinshu diagnose');
+    expect(wrapper.text()).not.toContain('1.0.0');
     expect(wrapper.find('[data-testid="lan-address"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="add-device"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="device-section"]').exists()).toBe(false);
@@ -552,6 +556,25 @@ describe('App 单页状态面板', () => {
         }),
       }),
     );
+  });
+
+  it('更多里能导出诊断包', async () => {
+    vi.mocked(save).mockResolvedValue('/tmp/yinshu-diagnose.zip');
+    api.exportDiagnostics.mockResolvedValue(undefined);
+
+    const wrapper = mountApp();
+    await flushPromises();
+    await wrapper.get('[data-testid="more-toggle"]').trigger('click');
+    await wrapper.get('[data-testid="export-diagnostics"]').trigger('click');
+    await flushPromises();
+
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultPath: 'yinshu-diagnose.zip',
+      }),
+    );
+    expect(api.exportDiagnostics).toHaveBeenCalledWith('/tmp/yinshu-diagnose.zip');
+    expect(wrapper.text()).toContain('诊断已导出');
   });
 
   it('导出默认勾选设备', async () => {

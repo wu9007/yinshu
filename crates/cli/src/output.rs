@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 use yinshu_core::{
@@ -138,5 +138,6 @@ pub enum CommandResult {
     TaskHistoryEvents(Vec<TaskHistoryEvent>),
     ImportPreview(ImportPreview),
     Doctor(DoctorReport),
+    Diagnostics { path: PathBuf },
     Status(AgentStatus),
 }

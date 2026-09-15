@@ -50,11 +50,15 @@ fn should_show_main_window_on_launch(args: &[String]) -> bool {
 }
 
 fn startup_error_log_path() -> std::path::PathBuf {
-    std::env::temp_dir().join("yinshu-startup-error.txt")
+    yinshu_core::config::startup_error_log_path()
+        .unwrap_or_else(|_| std::env::temp_dir().join(yinshu_core::config::STARTUP_ERROR_FILE_NAME))
 }
 
 fn report_startup_error(message: &str) {
     let path = startup_error_log_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     let _ = std::fs::write(&path, format!("{message}\n"));
     #[cfg(windows)]
     {
@@ -127,8 +131,18 @@ fn setup_desktop(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
 
 /// 启动 Tauri 应用、本地服务和后台打印 worker。
 pub fn run() {
+    yinshu_core::diagnostics::install_panic_hook();
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some("yinshu-desktop".into()),
+                    }),
+                ])
+                .build(),
+        )
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(
@@ -163,6 +177,7 @@ pub fn run() {
             commands::get_task_history_events,
             commands::clear_task_history,
             commands::run_doctor,
+            commands::export_diagnostics,
             commands::list_printers,
             commands::list_papers,
             commands::is_debug_build,
@@ -225,7 +240,7 @@ mod tests {
     use crate::agent_guard::{AgentPortStatus, RunningAgent};
 
     #[test]
-    fn startup_error_log_uses_a_stable_temp_file() {
+    fn startup_error_log_uses_a_stable_file_name() {
         assert_eq!(
             startup_error_log_path().file_name().unwrap(),
             "yinshu-startup-error.txt"

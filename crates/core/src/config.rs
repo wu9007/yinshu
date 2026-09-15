@@ -18,6 +18,14 @@ pub const TASK_HISTORY_FILE_NAME: &str = "task_history.sqlite3";
 pub const CONFIG_PATH_OVERRIDE_ENV: &str = "YINSHU_CONFIG_PATH";
 /// 覆盖数据目录路径的环境变量名。
 pub const DATA_DIR_OVERRIDE_ENV: &str = "YINSHU_DATA_DIR";
+/// 覆盖日志目录路径的环境变量名。
+pub const LOG_DIR_OVERRIDE_ENV: &str = "YINSHU_LOG_DIR";
+/// 覆盖诊断包输出目录的环境变量名。
+pub const DIAGNOSE_DIR_OVERRIDE_ENV: &str = "YINSHU_DIAGNOSE_DIR";
+/// 启动失败日志文件名。
+pub const STARTUP_ERROR_FILE_NAME: &str = "yinshu-startup-error.txt";
+/// 安装程序日志文件名。
+pub const INSTALL_LOG_FILE_NAME: &str = "install.log";
 
 /// 用户可配置的最小本地服务端口。
 pub const MIN_SERVICE_PORT: u16 = 10000;
@@ -57,6 +65,29 @@ pub fn cli_data_dir() -> Result<PathBuf, io::Error> {
     platform_config_dir().map(|dir| dir.join(APP_CONFIG_DIR_NAME))
 }
 
+/// 返回与 Tauri 日志插件一致的日志目录。
+pub fn cli_log_dir() -> Result<PathBuf, io::Error> {
+    if let Some(dir) = env::var_os(LOG_DIR_OVERRIDE_ENV) {
+        return Ok(PathBuf::from(dir));
+    }
+
+    platform_log_dir()
+}
+
+/// 返回启动失败日志路径。
+pub fn startup_error_log_path() -> Result<PathBuf, io::Error> {
+    Ok(cli_log_dir()?.join(STARTUP_ERROR_FILE_NAME))
+}
+
+/// 返回桌面上的默认诊断包路径。
+pub fn default_diagnose_output_path() -> Result<PathBuf, io::Error> {
+    if let Some(dir) = env::var_os(DIAGNOSE_DIR_OVERRIDE_ENV) {
+        return Ok(PathBuf::from(dir).join("yinshu-diagnose.zip"));
+    }
+
+    Ok(platform_desktop_dir()?.join("yinshu-diagnose.zip"))
+}
+
 #[cfg(target_os = "windows")]
 fn platform_config_dir() -> Result<PathBuf, io::Error> {
     env::var_os("APPDATA")
@@ -83,6 +114,43 @@ fn home_dir() -> Result<PathBuf, io::Error> {
     env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))
+}
+
+#[cfg(windows)]
+fn home_dir() -> Result<PathBuf, io::Error> {
+    env::var_os("USERPROFILE")
+        .map(PathBuf::from)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "USERPROFILE is not set"))
+}
+
+#[cfg(target_os = "windows")]
+fn platform_log_dir() -> Result<PathBuf, io::Error> {
+    env::var_os("LOCALAPPDATA")
+        .map(|dir| PathBuf::from(dir).join(APP_CONFIG_DIR_NAME).join("logs"))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "LOCALAPPDATA is not set"))
+}
+
+#[cfg(target_os = "macos")]
+fn platform_log_dir() -> Result<PathBuf, io::Error> {
+    home_dir().map(|home| home.join("Library").join("Logs").join(APP_CONFIG_DIR_NAME))
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn platform_log_dir() -> Result<PathBuf, io::Error> {
+    if let Some(dir) = env::var_os("XDG_DATA_HOME") {
+        return Ok(PathBuf::from(dir).join(APP_CONFIG_DIR_NAME).join("logs"));
+    }
+
+    home_dir().map(|home| {
+        home.join(".local")
+            .join("share")
+            .join(APP_CONFIG_DIR_NAME)
+            .join("logs")
+    })
+}
+
+fn platform_desktop_dir() -> Result<PathBuf, io::Error> {
+    home_dir().map(|home| home.join("Desktop"))
 }
 
 /// 本地 YinShu Agent 的持久化配置。
@@ -209,7 +277,7 @@ impl AgentConfig {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::{
         env,
@@ -218,12 +286,12 @@ mod tests {
     };
     use uuid::Uuid;
 
-    fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    pub(crate) fn test_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
     }
 
-    struct EnvGuard {
+    pub(crate) struct EnvGuard {
         key: &'static str,
         previous: Option<OsString>,
     }
@@ -241,7 +309,7 @@ mod tests {
         }
     }
 
-    fn set_env(key: &'static str, value: &std::path::Path) -> EnvGuard {
+    pub(crate) fn set_env(key: &'static str, value: &std::path::Path) -> EnvGuard {
         let previous = env::var_os(key);
         unsafe {
             env::set_var(key, value);
@@ -279,6 +347,73 @@ mod tests {
         assert_eq!(
             cli_task_history_path().unwrap(),
             data_dir.join(TASK_HISTORY_FILE_NAME)
+        );
+    }
+
+    #[test]
+    fn cli_log_dir_uses_log_dir_override() {
+        let _lock = test_lock();
+        let log_dir = std::env::temp_dir().join(format!("yinshu-logs-{}", Uuid::new_v4()));
+        let _guard = set_env(LOG_DIR_OVERRIDE_ENV, &log_dir);
+
+        assert_eq!(cli_log_dir().unwrap(), log_dir);
+        assert_eq!(
+            startup_error_log_path().unwrap(),
+            log_dir.join(STARTUP_ERROR_FILE_NAME)
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_log_dir_matches_tauri_localappdata() {
+        let _lock = test_lock();
+        let local = std::env::temp_dir().join(format!("yinshu-local-{}", Uuid::new_v4()));
+        let _log_guard = clear_env(LOG_DIR_OVERRIDE_ENV);
+        let _local_guard = set_env("LOCALAPPDATA", &local);
+
+        assert_eq!(
+            cli_log_dir().unwrap(),
+            local.join(APP_CONFIG_DIR_NAME).join("logs")
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_log_dir_matches_tauri_library_logs() {
+        let _lock = test_lock();
+        let home = std::env::temp_dir().join(format!("yinshu-home-{}", Uuid::new_v4()));
+        let _log_guard = clear_env(LOG_DIR_OVERRIDE_ENV);
+        let _home_guard = set_env("HOME", &home);
+
+        assert_eq!(
+            cli_log_dir().unwrap(),
+            home.join("Library").join("Logs").join(APP_CONFIG_DIR_NAME)
+        );
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn linux_log_dir_matches_tauri_xdg_data() {
+        let _lock = test_lock();
+        let data = std::env::temp_dir().join(format!("yinshu-xdg-{}", Uuid::new_v4()));
+        let _log_guard = clear_env(LOG_DIR_OVERRIDE_ENV);
+        let _xdg_guard = set_env("XDG_DATA_HOME", &data);
+
+        assert_eq!(
+            cli_log_dir().unwrap(),
+            data.join(APP_CONFIG_DIR_NAME).join("logs")
+        );
+    }
+
+    #[test]
+    fn diagnose_output_uses_override_dir() {
+        let _lock = test_lock();
+        let dir = std::env::temp_dir().join(format!("yinshu-diagnose-{}", Uuid::new_v4()));
+        let _guard = set_env(DIAGNOSE_DIR_OVERRIDE_ENV, &dir);
+
+        assert_eq!(
+            default_diagnose_output_path().unwrap(),
+            dir.join("yinshu-diagnose.zip")
         );
     }
 }

@@ -34,12 +34,19 @@ enum CliCommand {
     Service(ServiceArgs),
     Ip(IpArgs),
     Doctor(DoctorArgs),
+    Diagnose(DiagnoseArgs),
 }
 
 #[derive(Debug, Args)]
 struct DoctorArgs {
     #[arg(long)]
     json: bool,
+}
+
+#[derive(Debug, Args)]
+struct DiagnoseArgs {
+    #[arg(long)]
+    output: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -269,6 +276,19 @@ where
             };
             (output, exit_code)
         }
+        Some(CliCommand::Diagnose(args)) => {
+            let path = match service
+                .execute(Command::ExportDiagnostics {
+                    path: args.output,
+                    doctor_json: None,
+                })
+                .await?
+            {
+                CommandResult::Diagnostics { path } => path,
+                _ => return unexpected(),
+            };
+            (format!("diagnostics written to {}\n", path.display()), 0)
+        }
         Some(command) => (
             execute(command, &service, product.as_ref(), interaction.as_ref()).await?,
             0,
@@ -354,6 +374,7 @@ async fn execute(
         CliCommand::Service(args) => service_config(args, service).await,
         CliCommand::Ip(args) => ip(args, service).await,
         CliCommand::Doctor(_) => unreachable!("doctor is handled before shared execution"),
+        CliCommand::Diagnose(_) => unreachable!("diagnose is handled before shared execution"),
     }
 }
 

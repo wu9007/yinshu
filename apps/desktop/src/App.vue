@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   ChevronDown,
+  FileArchive,
   FileDown,
   FileUp,
   Printer,
@@ -17,6 +18,7 @@ import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialo
 import { relaunch } from '@tauri-apps/plugin-process';
 import {
   exportConfigFile,
+  exportDiagnostics,
   fetchPapers,
   fetchPrinters,
   clearTaskHistory,
@@ -103,6 +105,7 @@ const confirmingClearTaskHistory = ref(false);
 const saving = ref(false);
 const savingOrigins = ref(false);
 const exportingConfig = ref(false);
+const exportingDiagnostics = ref(false);
 const importingConfig = ref(false);
 const previewingConfigImport = ref(false);
 const showExportDialog = ref(false);
@@ -383,6 +386,27 @@ function openExportDialog(): void {
   exportOptions.value = defaultExportOptions();
   exportPassword.value = '';
   showExportDialog.value = true;
+}
+
+async function handleExportDiagnostics(): Promise<void> {
+  exportingDiagnostics.value = true;
+  errorMessage.value = '';
+  successMessage.value = '';
+
+  try {
+    const path = await saveDialog({
+      defaultPath: 'yinshu-diagnose.zip',
+      filters: [{ name: 'ZIP', extensions: ['zip'] }],
+    });
+    if (!path) return;
+
+    await exportDiagnostics(path);
+    showSuccess(t('diagnosticsExported'));
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : t('exportDiagnosticsFailed');
+  } finally {
+    exportingDiagnostics.value = false;
+  }
 }
 
 async function handleExportConfig(): Promise<void> {
@@ -1592,7 +1616,7 @@ onBeforeUnmount(() => {
                 {{ t('portPendingPrefix') }} {{ activePort }}{{ t('portPendingSuffix') }}
               </p>
             </div>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap gap-2">
               <Button
                 data-testid="export-config"
                 variant="outline"
@@ -1612,6 +1636,16 @@ onBeforeUnmount(() => {
               >
                 <FileUp class="size-4" />
                 {{ t('importConfig') }}
+              </Button>
+              <Button
+                data-testid="export-diagnostics"
+                variant="outline"
+                size="sm"
+                :disabled="exportingDiagnostics"
+                @click="handleExportDiagnostics"
+              >
+                <FileArchive class="size-4" />
+                {{ t('exportDiagnostics') }}
               </Button>
             </div>
           </CardContent>

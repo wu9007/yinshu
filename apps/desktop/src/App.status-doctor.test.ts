@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const api = vi.hoisted(() => ({
   exportConfigFile: vi.fn(),
+  exportDiagnostics: vi.fn(),
   fetchPapers: vi.fn(),
   fetchPrinters: vi.fn(),
   clearTaskHistory: vi.fn(),

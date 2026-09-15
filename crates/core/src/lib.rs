@@ -2,6 +2,7 @@
 
 pub mod activity;
 pub mod config;
+pub mod diagnostics;
 pub mod ip_whitelist;
 pub mod printing;
 pub mod protocol;

@@ -24,6 +24,38 @@ pub async fn get_config(
     }
 }
 
+/// 导出本地诊断包，尽量附带当前 Doctor 结果。
+#[tauri::command]
+pub async fn export_diagnostics(
+    path: String,
+    service: State<'_, Arc<CommandService>>,
+) -> Result<(), CommandError> {
+    export_diagnostics_with_service(PathBuf::from(path), service.inner().as_ref()).await
+}
+
+/// 通过共享命令服务导出诊断包，便于绕过 Tauri State 测试。
+async fn export_diagnostics_with_service(
+    path: PathBuf,
+    service: &CommandService,
+) -> Result<(), CommandError> {
+    let doctor_json = match service
+        .execute(Command::Doctor {
+            product: ProductKind::Desktop,
+        })
+        .await
+    {
+        Ok(CommandResult::Doctor(report)) => serde_json::to_string(&report).ok(),
+        _ => None,
+    };
+    service
+        .execute(Command::ExportDiagnostics {
+            path: Some(path),
+            doctor_json,
+        })
+        .await?;
+    Ok(())
+}
+
 /// 运行 Desktop 产品的只读本地环境检测。
 #[tauri::command]
 pub async fn run_doctor(
@@ -307,8 +339,9 @@ pub async fn list_papers(
 mod tests {
     use super::{
         check_service_port_available_for_host, clear_task_history_for_state,
-        get_task_history_events_for_state, get_task_history_for_state, run_doctor_with_service,
-        save_config_for_state, MAX_SERVICE_PORT, MIN_SERVICE_PORT,
+        export_diagnostics_with_service, get_task_history_events_for_state,
+        get_task_history_for_state, run_doctor_with_service, save_config_for_state,
+        MAX_SERVICE_PORT, MIN_SERVICE_PORT,
     };
     use crate::{
         config::AgentConfig,
@@ -366,6 +399,58 @@ mod tests {
                 product: ProductKind::Desktop,
             }]
         );
+    }
+
+    struct RecordingDiagnosticsExecutor {
+        calls: Arc<Mutex<Vec<Command>>>,
+    }
+
+    #[async_trait]
+    impl CommandExecutor for RecordingDiagnosticsExecutor {
+        async fn execute(&self, command: Command) -> Result<CommandResult, CommandError> {
+            self.calls.lock().unwrap().push(command.clone());
+            match command {
+                Command::Doctor { .. } => Ok(CommandResult::Doctor(DoctorReport::new(vec![]))),
+                Command::ExportDiagnostics { path, .. } => Ok(CommandResult::Diagnostics {
+                    path: path.unwrap_or_else(|| std::path::PathBuf::from("yinshu-diagnose.zip")),
+                }),
+                _ => panic!("unexpected command: {command:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn desktop_export_diagnostics_attaches_doctor_json() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let executor: Arc<dyn CommandExecutor> = Arc::new(RecordingDiagnosticsExecutor {
+            calls: calls.clone(),
+        });
+        let service = CommandService::new(Some(executor.clone()), executor);
+        let path = std::env::temp_dir().join("yinshu-diagnose-test.zip");
+
+        export_diagnostics_with_service(path.clone(), &service)
+            .await
+            .unwrap();
+
+        let commands = calls.lock().unwrap().clone();
+        assert!(matches!(
+            commands[0],
+            Command::Doctor {
+                product: ProductKind::Desktop
+            }
+        ));
+        match &commands[1] {
+            Command::ExportDiagnostics {
+                path: exported,
+                doctor_json,
+            } => {
+                assert_eq!(exported.as_deref(), Some(path.as_path()));
+                assert!(doctor_json
+                    .as_deref()
+                    .is_some_and(|json| json.contains("summary")));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
     }
 
     #[tokio::test]

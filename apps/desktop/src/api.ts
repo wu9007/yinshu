@@ -25,6 +25,11 @@ export function saveConfig(config: AgentConfig): Promise<AgentConfig> {
   return invoke<AgentConfig>('save_config', { config });
 }
 
+/** 导出本地诊断 zip。 */
+export function exportDiagnostics(path: string): Promise<void> {
+  return invoke<void>('export_diagnostics', { path });
+}
+
 /** 导出加密配置文件。 */
 export function exportConfigFile(
   path: string,

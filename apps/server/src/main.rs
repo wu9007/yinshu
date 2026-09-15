@@ -56,6 +56,20 @@ async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run_shared_cli(argv: Vec<std::ffi::OsString>) -> Result<(), Box<dyn std::error::Error>> {
+    if argv.get(1).and_then(|arg| arg.to_str()) == Some("diagnose") {
+        let output = run_cli_from(
+            argv,
+            yinshu_cli::diagnose_command_service(),
+            Arc::new(UnsupportedProductCommandAdapter::headless(
+                "headless autostart is managed by systemd and application language is fixed to English",
+            )),
+            Arc::new(TerminalInteraction),
+        )
+        .await?;
+        print!("{}", output.stdout);
+        eprint!("{}", output.stderr);
+        return Ok(());
+    }
     let paths = paths::system_paths();
     let read_only = argv.get(1).and_then(|arg| arg.to_str()) == Some("doctor");
     let state = if read_only {

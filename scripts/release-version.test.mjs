@@ -60,6 +60,15 @@ test('MSI uses a Chinese WiX language for the 印枢 product name', () => {
   assert.equal(config.productName, '印枢');
   assert.equal(config.bundle.windows.wix.language, 'zh-CN');
   assert.equal(config.bundle.windows.webviewInstallMode.type, 'offlineInstaller');
+  assert.equal(config.bundle.windows.nsis.installerHooks, 'windows/installer-hooks.nsh');
+});
+
+test('NSIS installer writes install.log under the app log directory', () => {
+  const hooks = readFileSync('apps/desktop/src-tauri/windows/installer-hooks.nsh', 'utf8');
+
+  assert.match(hooks, /NSIS_HOOK_PREINSTALL/);
+  assert.match(hooks, /NSIS_HOOK_POSTINSTALL/);
+  assert.match(hooks, /\$LOCALAPPDATA\\cn\.yinshu\.app\\logs\\install\.log/);
 });
 
 test('release workflow ad-hoc signs macOS when Apple certificate is missing', () => {
@@ -113,7 +122,8 @@ test('release workflow installs AppImage tools and builds NSIS then MSI on one W
   assert.match(workflow, /--bundles nsis\n/);
   assert.match(workflow, /--bundles msi\n/);
   assert.doesNotMatch(workflow, /--bundles nsis,msi/);
-  assert.equal((workflow.match(/platform: windows-latest/g) || []).length, 1);
+  assert.equal((workflow.match(/platform: windows-2022/g) || []).length, 1);
+  assert.doesNotMatch(workflow, /platform: windows-latest/);
   assert.match(workflow, /Publish Windows MSI/);
   assert.match(workflow, /Prepare Windows CLI sidecar/);
   assert.match(workflow, /prepare-windows-cli\.mjs x86_64-pc-windows-msvc/);

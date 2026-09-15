@@ -257,6 +257,40 @@ async fn ip_delete_keeps_required_loopback_address() {
     assert!(error.message.contains("127.0.0.1"));
 }
 
+struct DiagnoseExecutor;
+
+#[async_trait]
+impl CommandExecutor for DiagnoseExecutor {
+    async fn execute(&self, command: Command) -> Result<CommandResult, CommandError> {
+        match command {
+            Command::ExportDiagnostics { path, doctor_json } => {
+                assert!(doctor_json.is_none());
+                Ok(CommandResult::Diagnostics {
+                    path: path.unwrap_or_else(|| std::path::PathBuf::from("yinshu-diagnose.zip")),
+                })
+            }
+            _ => panic!("unexpected command: {command:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn diagnose_writes_the_output_path() {
+    let executor: Arc<dyn CommandExecutor> = Arc::new(DiagnoseExecutor);
+    let service = Arc::new(CommandService::new(None, executor));
+    let output = run_cli_from(
+        ["yinshu", "diagnose", "--output", "/tmp/custom.zip"],
+        service,
+        product(),
+        interaction(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(output.exit_code, 0);
+    assert_eq!(output.stdout, "diagnostics written to /tmp/custom.zip\n");
+}
+
 #[tokio::test]
 async fn doctor_json_preserves_report_and_returns_one_on_fail() {
     let executor: Arc<dyn CommandExecutor> = Arc::new(DoctorExecutor);

@@ -16,41 +16,44 @@ pub fn run_cli_from_env() -> i32 {
         print!("{}", output.stdout);
         return output.exit_code;
     }
-    let read_only = argv.get(1).and_then(|arg| arg.to_str()) == Some("doctor");
-    match build_service(read_only) {
-        Ok(service) => {
-            let runtime = tokio::runtime::Runtime::new().expect("create CLI runtime");
-            let product = match DesktopProductCommandAdapter::new(service.clone()) {
-                Ok(product) => Arc::new(product),
-                Err(error) => {
-                    eprintln!("{error}");
-                    return 1;
-                }
-            };
-            match runtime.block_on(run_cli_from(
-                argv,
-                service,
-                product,
-                Arc::new(TerminalInteraction),
-            )) {
-                Ok(output) => {
-                    if !output.stdout.is_empty() {
-                        print!("{}", output.stdout);
-                    }
-                    if !output.stderr.is_empty() {
-                        eprint!("{}", output.stderr);
-                    }
-                    output.exit_code
-                }
-                Err(error) => {
-                    eprintln!("{error}");
-                    error.exit_code()
-                }
+    let service = if argv.get(1).and_then(|arg| arg.to_str()) == Some("diagnose") {
+        yinshu_cli::diagnose_command_service()
+    } else {
+        let read_only = argv.get(1).and_then(|arg| arg.to_str()) == Some("doctor");
+        match build_service(read_only) {
+            Ok(service) => service,
+            Err(error) => {
+                eprintln!("{error}");
+                return 1;
             }
+        }
+    };
+    let runtime = tokio::runtime::Runtime::new().expect("create CLI runtime");
+    let product = match DesktopProductCommandAdapter::new(service.clone()) {
+        Ok(product) => Arc::new(product),
+        Err(error) => {
+            eprintln!("{error}");
+            return 1;
+        }
+    };
+    match runtime.block_on(run_cli_from(
+        argv,
+        service,
+        product,
+        Arc::new(TerminalInteraction),
+    )) {
+        Ok(output) => {
+            if !output.stdout.is_empty() {
+                print!("{}", output.stdout);
+            }
+            if !output.stderr.is_empty() {
+                eprint!("{}", output.stderr);
+            }
+            output.exit_code
         }
         Err(error) => {
             eprintln!("{error}");
-            1
+            error.exit_code()
         }
     }
 }

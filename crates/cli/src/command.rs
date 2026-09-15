@@ -44,6 +44,10 @@ pub enum Command {
     Doctor {
         product: ProductKind,
     },
+    ExportDiagnostics {
+        path: Option<PathBuf>,
+        doctor_json: Option<String>,
+    },
     Status,
 }
 
@@ -63,7 +67,9 @@ impl Command {
             | Self::PreviewConfigImport { .. }
             | Self::ImportConfig { .. }
             | Self::Doctor { .. } => CommandPolicy::OnlinePreferred,
-            Self::ValidateConfig { .. } => CommandPolicy::OfflineAllowed,
+            Self::ValidateConfig { .. } | Self::ExportDiagnostics { .. } => {
+                CommandPolicy::OfflineAllowed
+            }
         }
     }
 }

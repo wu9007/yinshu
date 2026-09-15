@@ -147,6 +147,13 @@ impl CommandExecutor for RuntimeCommandExecutor {
             Command::Doctor { product } => Ok(CommandResult::Doctor(
                 crate::doctor::run_doctor(&self.state, self.listen_addr, product).await,
             )),
+            Command::ExportDiagnostics { path, doctor_json } => {
+                let path = yinshu_cli::diagnostics::write_diagnostics_bundle(
+                    path,
+                    doctor_json.as_deref(),
+                )?;
+                Ok(CommandResult::Diagnostics { path })
+            }
             Command::Status => Ok(CommandResult::Status(AgentStatus {
                 running: true,
                 listen_addr: Some(self.listen_addr),

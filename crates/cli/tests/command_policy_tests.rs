@@ -20,3 +20,15 @@ fn config_validation_can_run_offline() {
         CommandPolicy::OfflineAllowed
     );
 }
+
+#[test]
+fn diagnostics_export_can_run_offline() {
+    assert_eq!(
+        Command::ExportDiagnostics {
+            path: None,
+            doctor_json: None,
+        }
+        .policy(),
+        CommandPolicy::OfflineAllowed
+    );
+}
