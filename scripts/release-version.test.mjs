@@ -38,10 +38,14 @@ test('README OS table matches CI-backed platforms', () => {
   const backlogEn = markdownSection(readmeEn, '## Backlog');
 
   assert.match(supported, /\| Windows \| 10、11 \|/);
+  assert.match(supported, /当前只发布 Windows x64 的 NSIS/);
+  assert.doesNotMatch(supported, /当前只发布 Windows x64 的 NSIS.+Apple Silicon/);
   assert.doesNotMatch(supported, /Windows 7|8\.1/);
   assert.match(supported, /未签名、未公证/);
   assert.match(supported, /HTTPS 页面连不上 `ws:\/\//);
   assert.match(supportedEn, /\| Windows \| 10, 11 \|/);
+  assert.match(supportedEn, /currently publishes Windows x64 NSIS/);
+  assert.doesNotMatch(supportedEn, /currently publishes Windows x64 NSIS.+macOS/);
   assert.doesNotMatch(supportedEn, /Windows 7|8\.1/);
   assert.match(supportedEn, /unsigned and not notarized/);
   assert.match(supportedEn, /HTTPS pages cannot use `ws:\/\//);
@@ -63,18 +67,13 @@ test('MSI uses a Chinese WiX language for the 印枢 product name', () => {
   assert.equal(config.bundle.windows.nsis.installerHooks, 'windows/installer-hooks.nsh');
 });
 
-test('MSI publish step uses an ASCII product name for WiX light.exe', () => {
+test('release workflow does not publish a Windows MSI', () => {
   const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
 
-  assert.match(workflow, /config\.productName = ['"]yinshu['"]/);
-  assert.match(workflow, /config\.bundle\.windows\.wix\.language = ['"]en-US['"]/);
-  assert.match(workflow, /TAURI_WIX_SKIP_MSI_VALIDATION: true/);
-  assert.match(workflow, /--bundles msi --verbose/);
-  assert.match(workflow, /Publish Windows MSI[\s\S]*continue-on-error: true/);
-  assert.match(workflow, /Enable VBScript for WiX MSI/);
-  assert.match(workflow, /VBSCRIPT~~~~/);
-  assert.match(workflow, /id: msi/);
-  assert.match(workflow, /steps\.msi\.outcome == 'success'/);
+  assert.doesNotMatch(workflow, /extra_msi/);
+  assert.doesNotMatch(workflow, /--bundles msi/);
+  assert.doesNotMatch(workflow, /Publish Windows MSI/);
+  assert.doesNotMatch(workflow, /TAURI_WIX_SKIP_MSI_VALIDATION/);
 });
 
 test('NSIS installer writes install.log under the app log directory', () => {
@@ -85,16 +84,17 @@ test('NSIS installer writes install.log under the app log directory', () => {
   assert.match(hooks, /\$LOCALAPPDATA\\cn\.yinshu\.app\\logs\\install\.log/);
 });
 
-test('release workflow ad-hoc signs macOS when Apple certificate is missing', () => {
+test('release workflow only publishes Windows NSIS', () => {
   const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
-  const config = JSON.parse(readFileSync('apps/desktop/src-tauri/tauri.conf.json', 'utf8'));
 
-  assert.equal(config.bundle.macOS.signingIdentity, '-');
-  assert.match(workflow, /APPLE_SIGNING_IDENTITY=-/);
-  assert.doesNotMatch(
-    workflow,
-    /APPLE_SIGNING_IDENTITY: \$\{\{\s*startsWith\(matrix\.platform, 'macos'\) && secrets\.APPLE_SIGNING_IDENTITY/,
-  );
+  assert.match(workflow, /runs-on: windows-2022/);
+  assert.match(workflow, /--target x86_64-pc-windows-msvc --bundles nsis/);
+  assert.doesNotMatch(workflow, /macos-latest|macos-15-intel/);
+  assert.doesNotMatch(workflow, /aarch64-apple-darwin|x86_64-apple-darwin/);
+  assert.doesNotMatch(workflow, /ubuntu-22\.04-arm/);
+  assert.doesNotMatch(workflow, /publish-headless/);
+  assert.doesNotMatch(workflow, /Import Apple Developer certificate/);
+  assert.doesNotMatch(workflow, /xdg-utils/);
 });
 
 test('release workflow builds from v* tags on main', () => {
@@ -120,40 +120,35 @@ test('release workflow marks SemVer prereleases as GitHub prereleases', () => {
   assert.match(workflow, /prerelease: \$\{\{ steps\.release_version\.outputs\.prerelease \}\}/);
 });
 
-test('desktop and headless publishing are independent after release preparation', () => {
+test('desktop publishing starts after release preparation', () => {
   const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
 
   assert.match(workflow, /prepare-release:\n\s+needs: quality/);
   assert.match(workflow, /publish-tauri:\n\s+needs: prepare-release/);
-  assert.match(workflow, /publish-headless:\n\s+needs: prepare-release/);
-  assert.doesNotMatch(workflow, /publish-headless:\n\s+needs: publish-tauri/);
 });
 
-test('release workflow installs AppImage tools and builds NSIS then MSI on one Windows runner', () => {
+test('release workflow builds NSIS on one Windows runner', () => {
   const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
 
-  assert.match(workflow, /xdg-utils/);
-  assert.match(workflow, /--bundles nsis\n/);
-  assert.match(workflow, /--bundles msi(?: --verbose)?\n/);
+  assert.match(workflow, /--bundles nsis/);
   assert.doesNotMatch(workflow, /--bundles nsis,msi/);
-  assert.equal((workflow.match(/platform: windows-2022/g) || []).length, 1);
-  assert.doesNotMatch(workflow, /platform: windows-latest/);
-  assert.match(workflow, /Publish Windows MSI/);
+  assert.equal((workflow.match(/windows-2022/g) || []).length, 1);
+  assert.doesNotMatch(workflow, /windows-latest/);
   assert.match(workflow, /Prepare Windows CLI sidecar/);
   assert.match(workflow, /prepare-windows-cli\.mjs x86_64-pc-windows-msvc/);
 });
 
-test('release workflow publishes after desktop and headless artifacts upload', () => {
+test('release workflow publishes after the Windows installer uploads', () => {
   const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
 
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /ARGS=\([\s\S]*--draft/);
   assert.match(workflow, /releaseDraft: true/);
+  assert.doesNotMatch(workflow, /publish-release:/);
   assert.match(
     workflow,
-    /publish-release:\n\s+needs: \[prepare-release, publish-tauri, publish-headless\]/,
+    /Label release installers[\s\S]*gh release edit "\$\{\{ needs\.prepare-release\.outputs\.tag \}\}"[\s\S]*--draft=false/,
   );
-  assert.match(workflow, /gh release edit "\$\{\{ needs\.prepare-release\.outputs\.tag \}\}"[\s\S]*--draft=false/);
 });
 
 test('headless packaging uses the normalized Linux package version', () => {

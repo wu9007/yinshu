@@ -8,12 +8,12 @@ Built for warehouses, stores, and domestic / Xinchuang workstations. No certific
 
 ## Supported operating systems
 
-Installers are only on [Releases](https://github.com/wu9007/yinshu/releases).
+Installers are only on [Releases](https://github.com/wu9007/yinshu/releases). The pipeline currently publishes Windows x64 NSIS (`.exe`).
 
 | OS | Versions | Arch | Packages |
 | --- | --- | --- | --- |
-| Windows | 10, 11 | x64 | NSIS (`.exe`), MSI |
-| macOS | 10.15 Catalina and later | Apple Silicon, Intel | `.dmg`. Currently unsigned and not notarized; right-click to open or remove quarantine |
+| Windows | 10, 11 | x64 | NSIS (`.exe`) |
+| macOS | 10.15 Catalina and later | Apple Silicon, Intel | `.dmg`. Currently unsigned and not notarized; right-click to open or remove quarantine. Not in this release |
 | Linux desktop | webkit2gtk 4.1, e.g. Ubuntu 22.04+, Debian 12+ | x64, ARM64 | deb, rpm, AppImage |
 | Linux headless | same | x64, ARM64 | deb, rpm |
 | Phone / tablet | iOS and Android system browsers | — | No app. Scan the workstation QR code; an allowlisted page prints. HTTPS pages cannot use `ws://` |

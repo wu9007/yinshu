@@ -80,7 +80,7 @@ test('unknown or already labeled names are left unchanged', () => {
   assert.equal(labelReleaseAssetName('印枢_1.0.0_x64-setup.exe.sig'), null);
 });
 
-test('release workflow relabels desktop and headless assets before publishing', () => {
+test('release workflow relabels desktop assets before publishing', () => {
   const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
 
   assert.match(workflow, /label-release-assets\.mjs/);

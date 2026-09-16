@@ -8,12 +8,12 @@
 
 ## 适配的操作系统
 
-安装包只从 [Releases](https://github.com/wu9007/yinshu/releases) 下载。
+安装包只从 [Releases](https://github.com/wu9007/yinshu/releases) 下载。当前只发布 Windows x64 的 NSIS（`.exe`）。
 
 | 系统 | 版本 | 架构 | 安装包 |
 | --- | --- | --- | --- |
-| Windows | 10、11 | x64 | NSIS（`.exe`）、MSI |
-| macOS | 10.15 Catalina 及以上 | Apple Silicon、Intel | `.dmg`。目前未签名、未公证，需右键打开或去掉隔离属性 |
+| Windows | 10、11 | x64 | NSIS（`.exe`） |
+| macOS | 10.15 Catalina 及以上 | Apple Silicon、Intel | `.dmg`。目前未签名、未公证，需右键打开或去掉隔离属性。本版本未发布 |
 | Linux 桌面 | webkit2gtk 4.1，例如 Ubuntu 22.04+、Debian 12+ | x64、ARM64 | deb、rpm、AppImage |
 | Linux 无界面 | 同上 | x64、ARM64 | deb、rpm |
 | 手机 / 平板 | iOS、Android 系统浏览器 | — | 无安装包。扫工位二维码，由已放行的网页打印。HTTPS 页面连不上 `ws://` |

@@ -99,31 +99,9 @@ jobs:
 
   publish-tauri:
     needs: prepare-release
+    runs-on: windows-2022
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-latest
-            args: --target aarch64-apple-darwin
-            rust_targets: aarch64-apple-darwin
-          - platform: macos-15-intel
-            args: --target x86_64-apple-darwin
-            rust_targets: x86_64-apple-darwin
-          - platform: ubuntu-22.04
-            args: --target x86_64-unknown-linux-gnu --bundles deb,rpm,appimage
-            rust_targets: x86_64-unknown-linux-gnu
-          - platform: ubuntu-22.04-arm
-            args: --target aarch64-unknown-linux-gnu --bundles deb,rpm,appimage
-            rust_targets: aarch64-unknown-linux-gnu
-          - platform: windows-2022
-            args: --target x86_64-pc-windows-msvc --bundles nsis
-            rust_targets: x86_64-pc-windows-msvc
-            extra_msi: true
-
-    runs-on: ${{ matrix.platform }}
-
     steps:
       - uses: actions/checkout@v5
 
@@ -141,25 +119,12 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust_targets }}
+          targets: x86_64-pc-windows-msvc
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: . -> target
-
-      - name: Install Linux dependencies
-        if: startsWith(matrix.platform, 'ubuntu')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            libgtk-3-dev \
-            librsvg2-dev \
-            patchelf \
-            rpm \
-            xdg-utils
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -172,41 +137,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "prerelease=$(node scripts/release-version.mjs prerelease "$VERSION")" >> "$GITHUB_OUTPUT"
 
-      - name: Import Apple Developer certificate
-        if: startsWith(matrix.platform, 'macos')
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY_VALUE: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID_VALUE: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD_VALUE: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID_VALUE: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          if [ -z "$APPLE_CERTIFICATE" ]; then
-            echo "APPLE_CERTIFICATE is not set; macOS artifacts will be unsigned"
-            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o "$CERTIFICATE_PATH"
-          security create-keychain -p "" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "" "$KEYCHAIN_PATH"
-          security import "$CERTIFICATE_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple: -k "" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
-          if [ -n "$APPLE_SIGNING_IDENTITY_VALUE" ]; then
-            printf 'APPLE_SIGNING_IDENTITY=%s\n' "$APPLE_SIGNING_IDENTITY_VALUE" >> "$GITHUB_ENV"
-          fi
-          if [ -n "$APPLE_ID_VALUE" ]; then
-            printf 'APPLE_ID=%s\n' "$APPLE_ID_VALUE" >> "$GITHUB_ENV"
-            printf 'APPLE_PASSWORD=%s\n' "$APPLE_PASSWORD_VALUE" >> "$GITHUB_ENV"
-            printf 'APPLE_TEAM_ID=%s\n' "$APPLE_TEAM_ID_VALUE" >> "$GITHUB_ENV"
-          fi
-
       - name: Prepare Windows CLI sidecar
-        if: startsWith(matrix.platform, 'windows')
         run: node scripts/prepare-windows-cli.mjs x86_64-pc-windows-msvc
 
       - name: Clear cached installer bundles
@@ -224,121 +155,13 @@ jobs:
           releaseBody: See the assets to download and install this version.
           releaseDraft: true
           prerelease: ${{ steps.release_version.outputs.prerelease }}
-          args: ${{ matrix.args }}
+          args: --target x86_64-pc-windows-msvc --bundles nsis
 
       - name: Label release installers
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/label-release-assets.mjs upload --tag "${{ needs.prepare-release.outputs.tag }}"
 
-      - name: Use an MSI-compatible prerelease version
-        if: matrix.extra_msi
-        shell: bash
-        run: |
-          VERSION="${{ steps.release_version.outputs.version }}"
-          MSI_VERSION="$(node -e '
-            const version = process.argv[1];
-            const [base, prerelease] = version.split("-", 2);
-            if (!prerelease) {
-              process.stdout.write(base);
-              process.exit(0);
-            }
-            const numeric = prerelease.split(".").findLast((part) => /^\d+$/.test(part));
-            if (numeric === undefined || Number(numeric) > 65535) {
-              throw new Error(`Cannot convert ${version} to an MSI-compatible version`);
-            }
-            process.stdout.write(`${base}-${numeric}`);
-          ' "$VERSION")"
-          MSI_VERSION="$MSI_VERSION" node -e '
-            const fs = require("fs");
-            const path = "apps/desktop/src-tauri/tauri.conf.json";
-            const config = JSON.parse(fs.readFileSync(path, "utf8"));
-            config.version = process.env.MSI_VERSION;
-            config.productName = "yinshu";
-            config.bundle.windows.wix.language = "en-US";
-            fs.writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
-          '
-          echo "Using MSI bundle version $MSI_VERSION for release $VERSION"
-
-      - name: Enable VBScript for WiX MSI
-        if: matrix.extra_msi
-        shell: pwsh
-        run: |
-          $cap = Get-WindowsCapability -Online -Name 'VBSCRIPT~~~~' -ErrorAction SilentlyContinue
-          if (-not $cap) {
-            Write-Host 'VBSCRIPT capability is not advertised on this image'
-            exit 0
-          }
-          Write-Host "VBSCRIPT state: $($cap.State)"
-          if ($cap.State -eq 'Installed') {
-            exit 0
-          }
-          Add-WindowsCapability -Online -Name 'VBSCRIPT~~~~'
-
-      - name: Publish Windows MSI
-        id: msi
-        if: matrix.extra_msi
-        continue-on-error: true
-        uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_WIX_SKIP_MSI_VALIDATION: true
-        with:
-          projectPath: apps/desktop
-          tagName: ${{ needs.prepare-release.outputs.tag }}
-          releaseName: 印枢 ${{ needs.prepare-release.outputs.tag }}
-          releaseBody: See the assets to download and install this version.
-          releaseDraft: true
-          prerelease: ${{ steps.release_version.outputs.prerelease }}
-          args: --target x86_64-pc-windows-msvc --bundles msi --verbose
-
-      - name: Label Windows MSI
-        if: matrix.extra_msi && steps.msi.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/label-release-assets.mjs upload --tag "${{ needs.prepare-release.outputs.tag }}"
-
-  publish-headless:
-    needs: prepare-release
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: ubuntu-22.04
-            rust_target: x86_64-unknown-linux-gnu
-            deb_arch: amd64
-          - platform: ubuntu-22.04-arm
-            rust_target: aarch64-unknown-linux-gnu
-            deb_arch: arm64
-    runs-on: ${{ matrix.platform }}
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.rust_target }}
-      - name: Install package tools
-        run: sudo apt-get update && sudo apt-get install -y rpm
-      - name: Build headless packages
-        env:
-          CARGO_BUILD_TARGET: ${{ matrix.rust_target }}
-          PACKAGE_ARCH: ${{ matrix.deb_arch }}
-        run: scripts/build-server-packages.sh
-      - name: Upload packages to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          gh release upload "${{ needs.prepare-release.outputs.tag }}" target/packages/* --clobber
-          node scripts/label-release-assets.mjs upload --tag "${{ needs.prepare-release.outputs.tag }}"
-
-  publish-release:
-    needs: [prepare-release, publish-tauri, publish-headless]
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-    steps:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
