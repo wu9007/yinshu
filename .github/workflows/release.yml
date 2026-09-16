@@ -254,6 +254,7 @@ jobs:
             const path = "apps/desktop/src-tauri/tauri.conf.json";
             const config = JSON.parse(fs.readFileSync(path, "utf8"));
             config.version = process.env.MSI_VERSION;
+            config.productName = "yinshu";
             fs.writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
           '
           echo "Using MSI bundle version $MSI_VERSION for release $VERSION"

@@ -18,7 +18,7 @@ export function labelReleaseAssetName(filename) {
     return `yinshu-${nsis[1]}-Windows-x64-setup.exe`;
   }
 
-  const msi = filename.match(/^印枢_(.+)_(x64|arm64)(?:_[A-Za-z-]+)?\.msi$/);
+  const msi = filename.match(/^(?:印枢|yinshu)_(.+)_(x64|arm64)(?:_[A-Za-z-]+)?\.msi$/);
   if (msi) {
     return `yinshu-${msi[1]}-Windows-${msi[2]}.msi`;
   }

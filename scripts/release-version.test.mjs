@@ -63,6 +63,13 @@ test('MSI uses a Chinese WiX language for the 印枢 product name', () => {
   assert.equal(config.bundle.windows.nsis.installerHooks, 'windows/installer-hooks.nsh');
 });
 
+test('MSI publish step uses an ASCII product name for WiX light.exe', () => {
+  const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
+
+  assert.match(workflow, /config\.productName = ['"]yinshu['"]/);
+  assert.match(workflow, /Publish Windows MSI/);
+});
+
 test('NSIS installer writes install.log under the app log directory', () => {
   const hooks = readFileSync('apps/desktop/src-tauri/windows/installer-hooks.nsh', 'utf8');
 
