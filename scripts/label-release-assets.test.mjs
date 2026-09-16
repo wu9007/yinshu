@@ -26,6 +26,10 @@ test('desktop installers include the operating system in the file name', () => {
     'yinshu-1.1.0-Windows-x64.msi',
   );
   assert.equal(
+    labelReleaseAssetName('yinshu_1.1.0_x64_en-US.msi'),
+    'yinshu-1.1.0-Windows-x64.msi',
+  );
+  assert.equal(
     labelReleaseAssetName('印枢_1.0.0_aarch64.dmg'),
     'yinshu-1.0.0-macOS-AppleSilicon.dmg',
   );

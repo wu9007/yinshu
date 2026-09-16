@@ -67,7 +67,14 @@ test('MSI publish step uses an ASCII product name for WiX light.exe', () => {
   const workflow = readFileSync('.github/workflows/release.yml', 'utf8');
 
   assert.match(workflow, /config\.productName = ['"]yinshu['"]/);
-  assert.match(workflow, /Publish Windows MSI/);
+  assert.match(workflow, /config\.bundle\.windows\.wix\.language = ['"]en-US['"]/);
+  assert.match(workflow, /TAURI_WIX_SKIP_MSI_VALIDATION: true/);
+  assert.match(workflow, /--bundles msi --verbose/);
+  assert.match(workflow, /Publish Windows MSI[\s\S]*continue-on-error: true/);
+  assert.match(workflow, /Enable VBScript for WiX MSI/);
+  assert.match(workflow, /VBSCRIPT~~~~/);
+  assert.match(workflow, /id: msi/);
+  assert.match(workflow, /steps\.msi\.outcome == 'success'/);
 });
 
 test('NSIS installer writes install.log under the app log directory', () => {
@@ -127,7 +134,7 @@ test('release workflow installs AppImage tools and builds NSIS then MSI on one W
 
   assert.match(workflow, /xdg-utils/);
   assert.match(workflow, /--bundles nsis\n/);
-  assert.match(workflow, /--bundles msi\n/);
+  assert.match(workflow, /--bundles msi(?: --verbose)?\n/);
   assert.doesNotMatch(workflow, /--bundles nsis,msi/);
   assert.equal((workflow.match(/platform: windows-2022/g) || []).length, 1);
   assert.doesNotMatch(workflow, /platform: windows-latest/);

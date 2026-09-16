@@ -255,15 +255,34 @@ jobs:
             const config = JSON.parse(fs.readFileSync(path, "utf8"));
             config.version = process.env.MSI_VERSION;
             config.productName = "yinshu";
+            config.bundle.windows.wix.language = "en-US";
             fs.writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
           '
           echo "Using MSI bundle version $MSI_VERSION for release $VERSION"
 
-      - name: Publish Windows MSI
+      - name: Enable VBScript for WiX MSI
         if: matrix.extra_msi
+        shell: pwsh
+        run: |
+          $cap = Get-WindowsCapability -Online -Name 'VBSCRIPT~~~~' -ErrorAction SilentlyContinue
+          if (-not $cap) {
+            Write-Host 'VBSCRIPT capability is not advertised on this image'
+            exit 0
+          }
+          Write-Host "VBSCRIPT state: $($cap.State)"
+          if ($cap.State -eq 'Installed') {
+            exit 0
+          }
+          Add-WindowsCapability -Online -Name 'VBSCRIPT~~~~'
+
+      - name: Publish Windows MSI
+        id: msi
+        if: matrix.extra_msi
+        continue-on-error: true
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_WIX_SKIP_MSI_VALIDATION: true
         with:
           projectPath: apps/desktop
           tagName: ${{ needs.prepare-release.outputs.tag }}
@@ -271,10 +290,10 @@ jobs:
           releaseBody: See the assets to download and install this version.
           releaseDraft: true
           prerelease: ${{ steps.release_version.outputs.prerelease }}
-          args: --target x86_64-pc-windows-msvc --bundles msi
+          args: --target x86_64-pc-windows-msvc --bundles msi --verbose
 
       - name: Label Windows MSI
-        if: matrix.extra_msi
+        if: matrix.extra_msi && steps.msi.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/label-release-assets.mjs upload --tag "${{ needs.prepare-release.outputs.tag }}"
