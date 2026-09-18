@@ -50,6 +50,17 @@ describe('StatusDoctorSheet', () => {
     expect(lastStatusChange(wrapper)).toEqual([false]);
   });
 
+  it('says Office warnings do not prove a conversion', async () => {
+    mocks.runDoctor.mockResolvedValue(report('WARN', 'office.docx'));
+    mount(StatusDoctorSheet, {
+      attachTo: document.body,
+      global: { plugins: [i18n] },
+      props: { open: true },
+    });
+    await flushPromises();
+    expect(document.body.textContent).toContain('有软件也不保证这次能转。标签、PDF 不用管');
+  });
+
   it('reports FAIL and call errors as needing attention', async () => {
     mocks.runDoctor.mockResolvedValueOnce(report('FAIL'));
     const wrapper = mount(StatusDoctorSheet, {
