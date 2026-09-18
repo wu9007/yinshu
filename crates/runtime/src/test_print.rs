@@ -1,7 +1,10 @@
 use crate::{
-    config::{AgentConfig, UiLanguage},
-    document::{test_page_to_pdf, DocumentError, TestPageContent},
-    printing::{paper_name, PaperInfo, PrintError, PrintOptions, PrinterInfo},
+    config::AgentConfig,
+    document::{test_page_to_pdf, DocumentError, TestPageContent, TestPageRow, TestPageSection},
+    printing::{
+        paper_name, PaperInfo, PrintError, PrintOptions, PrinterAvailability, PrinterInfo,
+        PrinterTrayInfo,
+    },
     protocol::EffectivePaper,
     state::AgentState,
     task_history::{NewTaskHistoryEvent, TaskHistorySource, TaskHistoryStatus},
@@ -149,13 +152,18 @@ async fn print_test_page_inner(
     printer: Option<&PrinterInfo>,
     path: &Path,
 ) -> Result<(), TestPrintError> {
-    let content = TestPageContent::new(test_page_lines(
+    let trays = state
+        .printing
+        .list_trays(printer_name)
+        .unwrap_or_default();
+    let content = build_test_page(
         config,
         printer_name,
         &paper,
         &DeviceInfo::current(),
         printer,
-    ));
+        &trays,
+    );
     test_page_to_pdf(&paper, &content, path)?;
 
     let options = PrintOptions {
@@ -169,75 +177,149 @@ async fn print_test_page_inner(
     Ok(())
 }
 
-fn test_page_lines(
+fn build_test_page(
     config: &AgentConfig,
     printer_name: &str,
     paper: &EffectivePaper,
     device: &DeviceInfo,
     printer: Option<&PrinterInfo>,
-) -> Vec<String> {
-    let mut lines = vec![
-        device.printed_at.clone(),
-        String::new(),
-        format!("Host    {}", empty_as_dash(&device.hostname)),
-        format!("User    {}", empty_as_dash(&device.username)),
-        format!("OS      {}", empty_as_dash(&device.os)),
-        format!("LAN     {}", device.local_ip.as_deref().unwrap_or("-")),
-        String::new(),
-        format!("Port    {}", config.service.port),
-        format!("Printer {}", printer_name),
-        format!(
-            "Paper   {} x {} mm",
-            format_paper_dimension(paper.width_mm),
-            format_paper_dimension(paper.height_mm)
-        ),
-        format!("Copies  {}", config.printing.default_copies),
-        format!(
-            "Boot    {}",
-            if config.app.autostart { "on" } else { "off" }
-        ),
-        format!("Lang    {}", language_label(config.app.language)),
-        format!("Web     {}", join_or_dash(&config.security.allowed_origins)),
-    ];
+    trays: &[PrinterTrayInfo],
+) -> TestPageContent {
+    let connect = match device.local_ip.as_deref() {
+        Some(ip) => format!("{ip}:{}", config.service.port),
+        None => format!("port {}", config.service.port),
+    };
 
-    if let Some(printer) = printer {
-        if let Some(dpi) = printer.dpi {
-            lines.push(format!("DPI     {dpi}"));
-        }
-        if let Some(port) = printer.port.as_deref().filter(|value| !value.is_empty()) {
-            lines.push(format!("PPort   {port}"));
-        }
-        if let Some(kind) = printer_kind_label(printer) {
-            lines.push(format!("Kind    {kind}"));
-        }
+    let mut printer_rows = vec![
+        row("Name", printer_name),
+        row("Status", &printer_status_line(printer)),
+    ];
+    if let Some(detail) = printer_detail_line(printer) {
+        printer_rows.push(row("Via", &detail));
+    }
+    if printer.is_some_and(|item| item.is_default) {
+        printer_rows.push(row("Default", "Yes"));
     }
 
-    lines
+    let tray_rows = if trays.is_empty() {
+        vec![row("", "Not reported")]
+    } else {
+        trays
+            .iter()
+            .take(8)
+            .map(|tray| row("", &tray_label(tray)))
+            .chain((trays.len() > 8).then(|| row("", &format!("+{} more", trays.len() - 8))))
+            .collect()
+    };
+
+    let paper_label = paper_name(paper.width_mm, paper.height_mm);
+    let paper_rows = if paper_label.ends_with("mm") {
+        vec![row("", &paper_label)]
+    } else {
+        vec![
+            row("", &paper_label),
+            row(
+                "",
+                &format!(
+                    "{} x {} mm",
+                    format_paper_dimension(paper.width_mm),
+                    format_paper_dimension(paper.height_mm)
+                ),
+            ),
+        ]
+    };
+
+    TestPageContent {
+        title: "Yinshu".into(),
+        kicker: "Test page".into(),
+        subtitle: "This paper reached this printer.".into(),
+        sections: vec![
+            TestPageSection {
+                heading: "Printer".into(),
+                rows: printer_rows,
+            },
+            TestPageSection {
+                heading: "Trays".into(),
+                rows: tray_rows,
+            },
+            TestPageSection {
+                heading: "Paper".into(),
+                rows: paper_rows,
+            },
+            TestPageSection {
+                heading: "Computer".into(),
+                rows: vec![
+                    row("Host", empty_as_dash(&device.hostname)),
+                    row("User", empty_as_dash(&device.username)),
+                    row("OS", empty_as_dash(&device.os)),
+                    row("Web", &connect),
+                    row("Sites", &join_or_none(&config.security.allowed_origins)),
+                ],
+            },
+        ],
+        footer: device.printed_at.clone(),
+    }
 }
 
-fn language_label(language: UiLanguage) -> &'static str {
-    match language {
-        UiLanguage::ZhCn => "zh-CN",
-        UiLanguage::En => "en",
+fn row(label: &str, value: &str) -> TestPageRow {
+    TestPageRow {
+        label: label.to_string(),
+        value: value.to_string(),
+    }
+}
+
+fn printer_status_line(printer: Option<&PrinterInfo>) -> String {
+    match printer.map(|item| item.availability) {
+        Some(PrinterAvailability::Available) => "Ready".into(),
+        Some(PrinterAvailability::Unavailable) => "Offline".into(),
+        Some(PrinterAvailability::Unknown) | None => "Not reported".into(),
+    }
+}
+
+fn printer_detail_line(printer: Option<&PrinterInfo>) -> Option<String> {
+    let printer = printer?;
+    let mut parts = Vec::new();
+    if let Some(kind) = printer_kind_label(printer) {
+        parts.push(kind.to_string());
+    }
+    if let Some(port) = printer.port.as_deref().filter(|value| !value.is_empty()) {
+        parts.push(port.to_string());
+    }
+    if let Some(dpi) = printer.dpi {
+        parts.push(format!("{dpi} dpi"));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("  /  "))
+    }
+}
+
+fn tray_label(tray: &PrinterTrayInfo) -> String {
+    let name = tray.name.replace('_', " ");
+    if name == tray.id {
+        name
+    } else {
+        format!("{name}  {}", tray.id)
     }
 }
 
 fn printer_kind_label(printer: &PrinterInfo) -> Option<&'static str> {
     if printer.is_virtual == Some(true) {
-        return Some("virtual");
+        return Some("Virtual");
     }
     if printer.is_network == Some(true) {
-        return Some("network");
+        return Some("Network");
     }
     if printer.is_local == Some(true) {
-        return Some("local");
+        return Some("Local");
     }
     None
 }
 
-fn join_or_dash(values: &[String]) -> String {
+fn join_or_none(values: &[String]) -> String {
     if values.is_empty() {
-        return "-".into();
+        return "None".into();
     }
     values.join(", ")
 }
@@ -334,18 +416,35 @@ fn format_paper_dimension(value: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{print_test_page_with_config, test_page_lines, DeviceInfo};
+    use super::{build_test_page, print_test_page_with_config, DeviceInfo};
     use crate::{
         config::AgentConfig,
+        document::TestPageContent,
         printing::{
             PaperInfo, PrintBackend, PrintError, PrintOptions, PrintResult, PrintSubmission,
-            PrinterInfo, RawPrintOptions,
+            PrinterInfo, PrinterTrayInfo, RawPrintOptions,
         },
         protocol::EffectivePaper,
         state::AgentState,
         task_history::{TaskHistorySource, TaskHistoryStatus, TaskHistoryStore},
     };
     use std::path::Path;
+
+    fn visible_text(content: &TestPageContent) -> Vec<String> {
+        let mut lines = vec![
+            content.title.clone(),
+            content.kicker.clone(),
+            content.subtitle.clone(),
+        ];
+        for section in &content.sections {
+            lines.push(section.heading.clone());
+            for row in &section.rows {
+                lines.push(format!("{} {}", row.label, row.value));
+            }
+        }
+        lines.push(content.footer.clone());
+        lines
+    }
 
     fn sample_device() -> DeviceInfo {
         DeviceInfo {
@@ -358,13 +457,10 @@ mod tests {
     }
 
     #[test]
-    fn test_page_lists_config_and_device_fields() {
+    fn test_page_lists_printer_trays_and_status() {
         let mut config = AgentConfig::default();
         config.service.port = 17890;
-        config.printing.default_copies = 2;
-        config.app.autostart = true;
         config.security.allowed_origins = vec!["https://erp.example.com".into()];
-        config.security.allowed_ips = vec!["127.0.0.1".into(), "192.168.1.0/24".into()];
         let paper = EffectivePaper {
             width_mm: 60.0,
             height_mm: 40.0,
@@ -379,33 +475,33 @@ mod tests {
             is_virtual: Some(false),
             availability: Default::default(),
         };
+        let trays = [PrinterTrayInfo {
+            id: "Tray1".into(),
+            name: "Tray 1".into(),
+        }];
 
-        let lines = test_page_lines(
+        let lines = visible_text(&build_test_page(
             &config,
             "Zebra_GX430t",
             &paper,
             &sample_device(),
             Some(&printer),
-        );
+            &trays,
+        ));
 
         assert!(lines.iter().all(|line| !line.contains("YinShu")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("Host    studio.local")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("LAN     192.168.1.23")));
-        assert!(lines.iter().any(|line| line.contains("Port    17890")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("Printer Zebra_GX430t")));
-        assert!(lines.iter().any(|line| line.contains("Paper   60 x 40 mm")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("Web     https://erp.example.com")));
-        assert!(lines.iter().all(|line| !line.starts_with("Allow ")));
-        assert!(lines.iter().any(|line| line.contains("DPI     203")));
-        assert!(lines.iter().any(|line| line.contains("PPort   USB001")));
+        assert!(lines.iter().any(|line| line.contains("Yinshu")));
+        assert!(lines.iter().any(|line| line.contains("Test page")));
+        assert!(lines.iter().any(|line| line.contains("Zebra_GX430t")));
+        assert!(lines.iter().any(|line| line.contains("Via")));
+        assert!(lines.iter().any(|line| line.contains("Not reported")));
+        assert!(lines.iter().any(|line| line.contains("Tray 1")));
+        assert!(lines.iter().any(|line| line.contains("203 dpi")));
+        assert!(lines.iter().any(|line| line.contains("USB001")));
+        assert!(lines.iter().any(|line| line.contains("192.168.1.23:17890")));
+        assert!(lines.iter().any(|line| line.contains("https://erp.example.com")));
+        assert!(lines.iter().any(|line| line.contains("60 x 40 mm")));
+        assert!(lines.iter().all(|line| line.chars().all(|c| c.is_ascii())));
     }
 
     #[tokio::test]

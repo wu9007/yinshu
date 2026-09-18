@@ -1,9 +1,9 @@
 use crate::protocol::EffectivePaper;
 use image::{DynamicImage, GenericImageView, ImageBuffer, ImageFormat, ImageReader, Rgb};
 use printpdf::{
-    ops::PdfFontHandle, BuiltinFont, Color, Line, LinePoint, Mm, Op, PdfDocument, PdfPage,
-    PdfSaveOptions, Point, Pt, RawImage, RawImageData, RawImageFormat, Rgb as PdfRgb, TextItem,
-    XObjectTransform,
+    ops::PdfFontHandle, BuiltinFont, Color, Line, LinePoint, Mm, Op, PaintMode, PdfDocument,
+    PdfPage, PdfSaveOptions, Point, Polygon, PolygonRing, Pt, RawImage, RawImageData,
+    RawImageFormat, Rgb as PdfRgb, TextItem, WindingOrder, XObjectTransform,
 };
 use std::{fs, io::Read, path::Path};
 use thiserror::Error;
@@ -155,17 +155,46 @@ pub fn image_to_pdf(
     Ok(())
 }
 
-/// 测试页上按行绘制的可读内容。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TestPageSection {
+    pub heading: String,
+    pub rows: Vec<TestPageRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TestPageRow {
+    pub label: String,
+    pub value: String,
+}
+
+/// 测试页上按区块绘制的可读内容。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TestPageContent {
-    pub lines: Vec<String>,
+    pub(crate) title: String,
+    pub(crate) kicker: String,
+    pub(crate) subtitle: String,
+    pub(crate) sections: Vec<TestPageSection>,
+    pub(crate) footer: String,
 }
 
 impl TestPageContent {
     /// 使用已排好的文本行构造测试页内容。
     pub fn new(lines: impl IntoIterator<Item = impl Into<String>>) -> Self {
         Self {
-            lines: lines.into_iter().map(Into::into).collect(),
+            title: String::new(),
+            kicker: String::new(),
+            subtitle: String::new(),
+            sections: vec![TestPageSection {
+                heading: String::new(),
+                rows: lines
+                    .into_iter()
+                    .map(|line| TestPageRow {
+                        label: String::new(),
+                        value: line.into(),
+                    })
+                    .collect(),
+            }],
+            footer: String::new(),
         }
     }
 }
@@ -197,63 +226,308 @@ pub fn test_page_to_pdf(
     Ok(())
 }
 
-/// 构造测试页边框和从上到下排版的文本行。
-fn test_page_ops(paper: &EffectivePaper, content: &TestPageContent) -> Vec<Op> {
+#[derive(Clone, Copy)]
+struct PageType {
+    margin: f64,
+    title_pt: f64,
+    kicker_pt: f64,
+    subtitle_pt: f64,
+    heading_pt: f64,
+    body_pt: f64,
+    footer_pt: f64,
+    label_col_mm: f64,
+    show_kicker: bool,
+    show_subtitle: bool,
+    show_scale: bool,
+}
+
+fn page_type(paper: &EffectivePaper) -> PageType {
     let min_side = paper.width_mm.min(paper.height_mm);
-    let margin = (min_side * 0.06).clamp(0.8, 3.0).min(min_side / 4.0);
+    PageType {
+        margin: (min_side * 0.085).clamp(1.2, 18.0),
+        title_pt: (min_side * 0.124).clamp(8.0, 26.0),
+        kicker_pt: (min_side * 0.043).clamp(5.5, 9.0),
+        subtitle_pt: (min_side * 0.052).clamp(6.0, 11.0),
+        heading_pt: (min_side * 0.038).clamp(5.5, 8.0),
+        body_pt: (min_side * 0.052).clamp(6.5, 11.0),
+        footer_pt: (min_side * 0.038).clamp(5.5, 8.0),
+        label_col_mm: (min_side * 0.114).clamp(12.0, 24.0),
+        show_kicker: min_side >= 36.0,
+        show_subtitle: min_side >= 80.0,
+        show_scale: min_side >= 140.0,
+    }
+}
+
+/// 构造测试页边框、分区和按纸张缩放的正文。
+fn test_page_ops(paper: &EffectivePaper, content: &TestPageContent) -> Vec<Op> {
+    let layout = page_type(paper);
     let width = paper.width_mm;
     let height = paper.height_mm;
-    let font_pt = (min_side * 0.14).clamp(5.0, 8.0);
-    let line_height_mm = font_pt * 25.4 / 72.0 * 1.28;
-    let max_width_mm = (width - margin * 2.0).max(4.0);
-    let max_chars = max_chars_for_width(max_width_mm, font_pt);
-    let wrapped: Vec<String> = content
-        .lines
-        .iter()
-        .flat_map(|line| wrap_pdf_text(line, max_chars))
-        .collect();
+    let margin = layout.margin;
+    let max_width = (width - margin * 2.0).max(4.0);
+    let latin = PdfFontHandle::Builtin(BuiltinFont::Helvetica);
+    let bold = PdfFontHandle::Builtin(BuiltinFont::HelveticaBold);
+    let floor = if layout.show_scale {
+        margin + 14.0
+    } else if !content.footer.is_empty() {
+        margin + 8.0
+    } else {
+        margin
+    };
 
-    let mut ops = vec![
-        Op::SaveGraphicsState,
-        Op::SetOutlineColor {
-            col: grayscale(0.0),
-        },
-        Op::SetOutlineThickness { pt: Pt(0.4) },
-        Op::DrawLine {
-            line: closed_line(&[
-                (margin * 0.45, margin * 0.45),
-                (width - margin * 0.45, margin * 0.45),
-                (width - margin * 0.45, height - margin * 0.45),
-                (margin * 0.45, height - margin * 0.45),
-            ]),
-        },
-        Op::StartTextSection,
-        Op::SetFillColor {
-            col: grayscale(0.0),
-        },
-        Op::SetFont {
-            font: PdfFontHandle::Builtin(BuiltinFont::Helvetica),
-            size: Pt(font_pt as f32),
-        },
-    ];
+    let mut ops = vec![Op::SaveGraphicsState];
+    ops.push(Op::SetOutlineColor {
+        col: grayscale(0.0),
+    });
+    ops.push(Op::SetOutlineThickness { pt: Pt(0.35) });
+    ops.push(Op::DrawLine {
+        line: closed_line(&[
+            (margin * 0.4, margin * 0.4),
+            (width - margin * 0.4, margin * 0.4),
+            (width - margin * 0.4, height - margin * 0.4),
+            (margin * 0.4, height - margin * 0.4),
+        ]),
+    });
 
-    let mut y = height - margin - font_pt * 25.4 / 72.0;
-    for line in wrapped {
-        if y < margin {
+    let mut y = height - margin - pt_mm(layout.title_pt) * 0.88;
+    if !content.title.is_empty() {
+        y = draw_wrapped(
+            &mut ops,
+            &bold,
+            layout.title_pt,
+            margin,
+            y,
+            floor,
+            max_width,
+            &content.title,
+            0.0,
+        );
+    }
+    if layout.show_kicker && !content.kicker.is_empty() {
+        y -= pt_mm(layout.kicker_pt) * 1.55;
+        y = draw_wrapped(
+            &mut ops,
+            &latin,
+            layout.kicker_pt,
+            margin,
+            y,
+            floor,
+            max_width,
+            &content.kicker,
+            0.4,
+        );
+    }
+    if !content.title.is_empty() || !content.kicker.is_empty() {
+        y -= 3.4;
+        ops.push(Op::SetOutlineColor {
+            col: grayscale(0.0),
+        });
+        ops.push(Op::SetOutlineThickness { pt: Pt(0.35) });
+        ops.push(Op::DrawLine {
+            line: Line {
+                points: vec![line_point(margin, y), line_point(margin + max_width, y)],
+                is_closed: false,
+            },
+        });
+        y -= 5.2;
+    }
+    if layout.show_subtitle && !content.subtitle.is_empty() {
+        y = draw_wrapped(
+            &mut ops,
+            &latin,
+            layout.subtitle_pt,
+            margin,
+            y,
+            floor,
+            max_width,
+            &content.subtitle,
+            0.28,
+        );
+        y -= 6.5;
+    }
+
+    for section in &content.sections {
+        if y < floor + 6.0 {
             break;
         }
+        if !section.heading.is_empty() {
+            y -= 4.2;
+            y = draw_wrapped(
+                &mut ops,
+                &bold,
+                layout.heading_pt,
+                margin,
+                y,
+                floor,
+                max_width,
+                &section.heading.to_ascii_uppercase(),
+                0.4,
+            );
+            y -= pt_mm(layout.body_pt) * 1.45;
+        }
+        for row in &section.rows {
+            if y < floor {
+                break;
+            }
+            y = draw_row(
+                &mut ops,
+                &latin,
+                layout.body_pt,
+                margin,
+                y,
+                floor,
+                max_width,
+                layout.label_col_mm,
+                row,
+            );
+            y -= pt_mm(layout.body_pt) * 1.38;
+        }
+    }
+
+    let bar_y = margin + 3.4;
+    if layout.show_scale {
+        let bar_width = 20.0_f64.min(max_width);
+        ops.push(Op::SetFillColor {
+            col: grayscale(0.0),
+        });
+        ops.push(filled_rect(margin, bar_y, margin + bar_width, bar_y + 1.3));
+        draw_wrapped(
+            &mut ops,
+            &latin,
+            7.0,
+            margin,
+            bar_y + 5.4,
+            margin,
+            max_width,
+            "20 mm",
+            0.35,
+        );
+    }
+    if !content.footer.is_empty() {
+        let footer_width = text_width_mm(&content.footer, layout.footer_pt);
+        let footer_x = if layout.show_scale {
+            (width - margin - footer_width).max(margin + 28.0)
+        } else {
+            margin
+        };
+        draw_wrapped(
+            &mut ops,
+            &latin,
+            layout.footer_pt,
+            footer_x,
+            if layout.show_scale {
+                bar_y + 5.4
+            } else {
+                margin + 3.2
+            },
+            margin,
+            max_width,
+            &content.footer,
+            0.4,
+        );
+    }
+
+    ops.push(Op::RestoreGraphicsState);
+    ops
+}
+
+fn draw_row(
+    ops: &mut Vec<Op>,
+    font: &PdfFontHandle,
+    size_pt: f64,
+    x: f64,
+    y: f64,
+    floor: f64,
+    max_width: f64,
+    label_col_mm: f64,
+    row: &TestPageRow,
+) -> f64 {
+    if row.label.is_empty() {
+        return draw_wrapped(ops, font, size_pt, x, y, floor, max_width, &row.value, 0.0);
+    }
+    let value_x = x + label_col_mm;
+    let value_width = (max_width - label_col_mm).max(8.0);
+    draw_wrapped(
+        ops,
+        font,
+        size_pt,
+        x,
+        y,
+        floor,
+        label_col_mm - 1.5,
+        &row.label,
+        0.4,
+    );
+    draw_wrapped(ops, font, size_pt, value_x, y, floor, value_width, &row.value, 0.0)
+}
+
+fn draw_wrapped(
+    ops: &mut Vec<Op>,
+    font: &PdfFontHandle,
+    size_pt: f64,
+    x: f64,
+    mut y: f64,
+    floor: f64,
+    max_width_mm: f64,
+    text: &str,
+    color: f32,
+) -> f64 {
+    let line_height_mm = pt_mm(size_pt) * 1.28;
+    let max_chars = max_chars_for_width(max_width_mm, size_pt);
+    let mut first = true;
+    for line in wrap_pdf_text(text, max_chars) {
+        if !first {
+            y -= line_height_mm;
+        }
+        first = false;
+        if y < floor {
+            break;
+        }
+        if line.is_empty() {
+            continue;
+        }
+        ops.push(Op::StartTextSection);
+        ops.push(Op::SetFillColor {
+            col: grayscale(color),
+        });
+        ops.push(Op::SetFont {
+            font: font.clone(),
+            size: Pt(size_pt as f32),
+        });
         ops.push(Op::SetTextCursor {
-            pos: point_mm(margin, y),
+            pos: point_mm(x, y),
         });
         ops.push(Op::ShowText {
             items: vec![TextItem::Text(line)],
         });
-        y -= line_height_mm;
+        ops.push(Op::EndTextSection);
     }
+    y
+}
 
-    ops.push(Op::EndTextSection);
-    ops.push(Op::RestoreGraphicsState);
-    ops
+fn pt_mm(size_pt: f64) -> f64 {
+    size_pt * 25.4 / 72.0
+}
+
+fn text_width_mm(text: &str, size_pt: f64) -> f64 {
+    text.chars().count() as f64 * size_pt * 0.52 * 25.4 / 72.0
+}
+
+fn filled_rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Op {
+    Op::DrawPolygon {
+        polygon: Polygon {
+            rings: vec![PolygonRing {
+                points: vec![
+                    line_point(x0, y0),
+                    line_point(x1, y0),
+                    line_point(x1, y1),
+                    line_point(x0, y1),
+                ],
+            }],
+            mode: PaintMode::Fill,
+            winding_order: WindingOrder::NonZero,
+        },
+    }
 }
 
 fn max_chars_for_width(max_width_mm: f64, font_pt: f64) -> usize {
