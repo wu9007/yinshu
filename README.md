@@ -7,7 +7,7 @@ Local print agent. A trusted page or phone sends the job; the OS print queue put
 [Demo](https://github.com/wu9007/yinshu-demo) · [Releases](https://github.com/wu9007/yinshu/releases) · [Protocol](docs/technical_en.md)
 
 <p align="center">
-  <img src="screenshots/settings.png" width="360" alt="Settings" />
+  <img src="screenshots/panel.gif" width="360" alt="Yinshu tray panel" />
 </p>
 
 ## Use

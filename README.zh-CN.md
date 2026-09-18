@@ -7,7 +7,7 @@
 [Demo](https://github.com/wu9007/yinshu-demo) · [安装包](https://github.com/wu9007/yinshu/releases) · [协议](docs/technical.md)
 
 <p align="center">
-  <img src="screenshots/settings.png" width="360" alt="设置" />
+  <img src="screenshots/panel.gif" width="360" alt="印枢工位面板" />
 </p>
 
 ## 使用
