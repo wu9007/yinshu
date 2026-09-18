@@ -148,7 +148,8 @@ function statusClasses(status: DoctorStatus): string {
                   <code v-if="item.technicalCode" class="mt-1 block break-all text-xs opacity-70">
                     {{ item.technicalCode }}
                   </code>
-                  <p v-if="item.suggestionKey" class="mt-2 text-xs">
+                  <p class="mt-2 text-xs opacity-80">{{ t(item.purposeKey) }}</p>
+                  <p v-if="item.suggestionKey" class="mt-1 text-xs">
                     {{ t(item.suggestionKey) }}
                   </p>
                 </div>

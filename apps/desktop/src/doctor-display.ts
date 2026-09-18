@@ -12,6 +12,7 @@ export interface PresentedDoctorCheck {
   group: DoctorGroupKey;
   titleKey: string;
   resultKey: string;
+  purposeKey: string;
   suggestionKey: string | null;
   technicalCode: string | null;
 }
@@ -27,7 +28,7 @@ const DESCRIPTORS: Record<string, DoctorDescriptor> = {
   'data.directory': { key: 'dataDirectory', group: 'core' },
   'agent.ipc': { key: 'agentIpc', group: 'core' },
   'service.port': { key: 'servicePort', group: 'core' },
-  'printing.printers': { key: 'printers', group: 'printing' },
+  'printing.printers': { key: 'printers', group: 'core' },
   'browser.available': { key: 'browser', group: 'printing' },
   'office.docx': { key: 'docx', group: 'printing' },
   'office.xlsx': { key: 'xlsx', group: 'printing' },
@@ -35,6 +36,12 @@ const DESCRIPTORS: Record<string, DoctorDescriptor> = {
 };
 
 const GROUP_ORDER: DoctorGroupKey[] = ['core', 'printing', 'other'];
+const CODE_ORDER = Object.keys(DESCRIPTORS);
+
+function rank(code: string): number {
+  const index = CODE_ORDER.indexOf(code);
+  return index === -1 ? CODE_ORDER.length : index;
+}
 
 export function presentDoctorCheck(check: DoctorCheck): PresentedDoctorCheck {
   const descriptor = DESCRIPTORS[check.code];
@@ -48,6 +55,7 @@ export function presentDoctorCheck(check: DoctorCheck): PresentedDoctorCheck {
     group,
     titleKey: `${base}.title`,
     resultKey: `${base}.${status}`,
+    purposeKey: `${base}.purpose`,
     suggestionKey: check.status === 'PASS' ? null : `${base}.${status}Suggestion`,
     technicalCode: descriptor ? null : check.code,
   };
@@ -58,6 +66,8 @@ export function groupDoctorChecks(checks: DoctorCheck[]): DoctorCheckGroup[] {
   return GROUP_ORDER.map((key) => ({
     key,
     labelKey: `doctor.groups.${key}`,
-    checks: presented.filter((check) => check.group === key),
+    checks: presented
+      .filter((check) => check.group === key)
+      .sort((a, b) => rank(a.check.code) - rank(b.check.code)),
   })).filter((group) => group.checks.length > 0);
 }

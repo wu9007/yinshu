@@ -23,10 +23,16 @@ describe('doctor display mapping', () => {
   it('groups known checks in the designed order', () => {
     const groups = groupDoctorChecks([
       check('office.pptx', 'WARN'),
+      check('printing.printers', 'PASS'),
       check('config.valid', 'PASS'),
     ]);
 
     expect(groups.map((group) => group.key)).toEqual(['core', 'printing']);
+    expect(groups[0].checks.map((item) => item.check.code)).toEqual([
+      'config.valid',
+      'printing.printers',
+    ]);
+    expect(groups[1].checks.map((item) => item.check.code)).toEqual(['office.pptx']);
   });
 
   it('keeps unknown checks visible with a technical code', () => {
@@ -34,6 +40,7 @@ describe('doctor display mapping', () => {
       group: 'other',
       titleKey: 'doctor.checks.unknown.title',
       resultKey: 'doctor.checks.unknown.warn',
+      purposeKey: 'doctor.checks.unknown.purpose',
       suggestionKey: 'doctor.checks.unknown.warnSuggestion',
       technicalCode: 'future.check',
     });
@@ -59,6 +66,7 @@ describe('doctor display mapping', () => {
         for (const locale of ['zh-CN', 'en'] as const) {
           expect(hasPath(messages[locale], item.titleKey)).toBe(true);
           expect(hasPath(messages[locale], item.resultKey)).toBe(true);
+          expect(hasPath(messages[locale], item.purposeKey)).toBe(true);
           if (item.suggestionKey) {
             expect(hasPath(messages[locale], item.suggestionKey)).toBe(true);
           }

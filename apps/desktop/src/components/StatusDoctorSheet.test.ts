@@ -43,8 +43,9 @@ describe('StatusDoctorSheet', () => {
     await flushPromises();
 
     expect(mocks.runDoctor).toHaveBeenCalledTimes(1);
-    expect(document.body.textContent).toContain('未检测到打印机');
-    expect(document.body.textContent).toContain('安装打印机并检查系统打印服务');
+    expect(document.body.textContent).toContain('系统里还没有打印机');
+    expect(document.body.textContent).toContain('只管名单在不在。不管在不在线、有没有纸');
+    expect(document.body.textContent).toContain('先在系统里把打印机装好，再回来重新检测');
     expect(document.body.textContent).not.toContain('backend English');
     expect(lastStatusChange(wrapper)).toEqual([false]);
   });
@@ -79,7 +80,7 @@ describe('StatusDoctorSheet', () => {
 
     setI18nLocale('en');
     await flushPromises();
-    expect(document.body.textContent).toContain('This check needs attention');
+    expect(document.body.textContent).toContain('Needs a look');
     expect(mocks.runDoctor).toHaveBeenCalledTimes(1);
   });
 
@@ -101,6 +102,8 @@ describe('StatusDoctorSheet', () => {
 
     resolveRun(report('PASS'));
     await flushPromises();
+    expect(document.body.textContent).toContain('系统里看得到打印机');
+    expect(document.body.textContent).toContain('只管名单在不在。不管在不在线、有没有纸');
     await wrapper.setProps({ open: false });
     await wrapper.setProps({ open: true });
     await flushPromises();
