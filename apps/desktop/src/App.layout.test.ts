@@ -72,6 +72,11 @@ function job(overrides: Partial<TaskHistoryJob>): TaskHistoryJob {
   };
 }
 
+async function openAccess(wrapper: ReturnType<typeof mountApp>) {
+  await wrapper.get('[data-testid="access-toggle"]').trigger('click');
+  await nextTick();
+}
+
 function mountApp() {
   return mount(App, {
     global: {
@@ -88,7 +93,7 @@ function mountApp() {
   });
 }
 
-describe('App 单页状态面板', () => {
+describe('App 工位面板', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setI18nLocale('zh-CN');
@@ -123,23 +128,31 @@ describe('App 单页状态面板', () => {
     ]);
   });
 
-  it('取消平级标签，按打印、谁可以连接、最近、更多排列', async () => {
+  it('首页只留打印、放行入口和刚才入口', async () => {
     const wrapper = mountApp();
     await flushPromises();
 
     expect(wrapper.find('[data-testid="print-section"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="access-section"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="access-toggle"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="recent-section"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="more-toggle"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="save-settings"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="access-section"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="computers-section"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('印枢');
     expect(wrapper.text()).not.toContain('YinShu');
+    expect(wrapper.text()).toContain('允许的网页');
+    expect(wrapper.get('[data-testid="printer-offline-hint"]').text()).toContain('打印机离线');
     expect(wrapper.find('#service-port').exists()).toBe(false);
     expect(wrapper.find('[data-testid="export-config"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="access-websites-tab"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="add-device"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="connection-overlay"]').exists()).toBe(false);
+
+    await openAccess(wrapper);
     expect(wrapper.get('[data-testid="access-websites-tab"]').text()).toContain('网站');
     expect(wrapper.get('[data-testid="access-devices-tab"]').text()).toContain('设备');
     expect(wrapper.get('[data-testid="access-qr-button"]').text()).toContain('二维码');
-    expect(wrapper.find('[data-testid="add-device"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="connection-overlay"]').exists()).toBe(false);
   });
 
   it('主栏不再被 max-w-md 卡住', async () => {
@@ -172,6 +185,7 @@ describe('App 单页状态面板', () => {
     const status = trigger.get('[data-testid="printer-availability"]');
     expect(status.attributes('data-availability')).toBe('unavailable');
     expect(status.attributes('data-printer')).toBe('Zebra_GX430t');
+    expect(wrapper.get('[data-testid="printer-offline-hint"]').text()).toContain('开机并插好线');
     expect(wrapper.find('#default-paper').exists()).toBe(true);
   });
 
@@ -286,27 +300,38 @@ describe('App 单页状态面板', () => {
     expect(wrapper.get('[data-testid="recent-section"]').text()).toContain('测试');
   });
 
-  it('没有未保存改动时不显示保存，改纸张后才出现', async () => {
+  it('改纸张会立刻保存，首页没有保存按钮', async () => {
+    api.saveConfig.mockImplementation(async (next) => next);
     const wrapper = mountApp();
     await flushPromises();
 
     expect(wrapper.find('[data-testid="save-settings"]').exists()).toBe(false);
 
     await wrapper.get('#paper-width').setValue('80');
-    await nextTick();
+    await flushPromises();
 
-    expect(wrapper.find('[data-testid="save-settings"]').exists()).toBe(true);
+    expect(api.saveConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        printing: expect.objectContaining({
+          default_paper: expect.objectContaining({ width_mm: 80 }),
+        }),
+      }),
+    );
+
+    await wrapper.get('[data-testid="more-toggle"]').trigger('click');
+    await nextTick();
+    expect(wrapper.get('[data-testid="save-settings"]').attributes('disabled')).toBeDefined();
   });
 
-  it('最近任务默认只显示 2 条，展开后能看明细', async () => {
+  it('首页只露出最近一条，展开后能看明细', async () => {
     const wrapper = mountApp();
     await flushPromises();
 
-    expect(wrapper.findAll('[data-testid^="recent-task-row-"]').length).toBe(2);
+    expect(wrapper.findAll('[data-testid^="recent-task-row-"]').length).toBe(0);
+    expect(wrapper.get('[data-testid="recent-section"]').text()).toContain('测试');
 
     await wrapper.get('[data-testid="show-all-tasks"]').trigger('click');
     await nextTick();
-    expect(wrapper.findAll('[data-testid^="recent-task-row-"]').length).toBe(2);
     expect(wrapper.findAll('[data-testid^="all-task-row-"]').length).toBe(4);
 
     api.getTaskHistoryEvents.mockResolvedValue([
@@ -344,15 +369,14 @@ describe('App 单页状态面板', () => {
 
     const wrapper = mountApp();
     await flushPromises();
+    await openAccess(wrapper);
 
     const origins = wrapper.get('[data-testid="origin-list"]');
     expect(origins.text()).toContain('https://e.example.com');
     expect(origins.classes()).toContain('overflow-y-auto');
     expect(wrapper.get('[data-testid="print-section"]').text()).toContain('打印');
-    expect(wrapper.get('[data-testid="recent-section"]').text()).toContain('最近');
-    expect(
-      wrapper.get('[data-testid="panel-footer"]').get('[data-testid="more-toggle"]').text(),
-    ).toContain('更多');
+    expect(wrapper.get('[data-testid="recent-section"]').text()).toContain('测试');
+    expect(wrapper.get('[data-testid="more-toggle"]').attributes('aria-label')).toBe('更多');
   });
 
   it('更多里才出现端口和导入导出，没有本机地址和设备', async () => {
@@ -382,6 +406,7 @@ describe('App 单页状态面板', () => {
   it('设备标签里能加网段，回环不出现，二维码弹出可复制的连接地址', async () => {
     const wrapper = mountApp();
     await flushPromises();
+    await openAccess(wrapper);
 
     await wrapper.get('[data-testid="access-devices-tab"]').trigger('click');
     await nextTick();
@@ -407,6 +432,7 @@ describe('App 单页状态面板', () => {
 
     const wrapper = mountApp();
     await flushPromises();
+    await openAccess(wrapper);
     await wrapper.get('[data-testid="access-qr-button"]').trigger('click');
     await flushPromises();
 
@@ -480,6 +506,7 @@ describe('App 单页状态面板', () => {
 
     const wrapper = mountApp();
     await flushPromises();
+    await openAccess(wrapper);
     await wrapper
       .get('input[placeholder="https://example.com"]')
       .setValue('https://wms.example.com');
@@ -496,8 +523,6 @@ describe('App 单页状态面板', () => {
     );
 
     await wrapper.get('#paper-width').setValue('80');
-    await nextTick();
-    await wrapper.get('[data-testid="save-settings"]').trigger('click');
     await flushPromises();
 
     expect(api.saveConfig).toHaveBeenLastCalledWith(
@@ -514,6 +539,7 @@ describe('App 单页状态面板', () => {
 
     const wrapper = mountApp();
     await flushPromises();
+    await openAccess(wrapper);
     await wrapper.get('[data-testid="access-devices-tab"]').trigger('click');
     await nextTick();
 
@@ -595,6 +621,7 @@ describe('App 单页状态面板', () => {
 
     const wrapper = mountApp();
     await flushPromises();
+    await openAccess(wrapper);
     await wrapper
       .get('input[placeholder="https://example.com"]')
       .setValue('https://shop.example.com/orders?id=1');
@@ -616,6 +643,7 @@ describe('App 单页状态面板', () => {
 
     const wrapper = mountApp();
     await flushPromises();
+    await openAccess(wrapper);
     await wrapper
       .get('input[placeholder="https://example.com"]')
       .setValue('https://erp.example.com');
@@ -626,7 +654,7 @@ describe('App 单页状态面板', () => {
     expect(api.saveConfig).not.toHaveBeenCalled();
   });
 
-  it('Escape 和点遮罩能关掉更多', async () => {
+  it('Escape 和返回能关掉更多', async () => {
     const wrapper = mountApp();
     await flushPromises();
     await wrapper.get('[data-testid="more-toggle"]').trigger('click');
@@ -639,7 +667,7 @@ describe('App 单页状态面板', () => {
 
     await wrapper.get('[data-testid="more-toggle"]').trigger('click');
     await nextTick();
-    await wrapper.get('[data-testid="more-overlay"]').trigger('click');
+    await wrapper.get('[data-testid="more-close"]').trigger('click');
     await nextTick();
     expect(wrapper.find('#service-port').exists()).toBe(false);
   });

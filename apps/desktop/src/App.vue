@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   ChevronDown,
+  ChevronLeft,
   FileArchive,
   FileDown,
   FileUp,
@@ -10,6 +11,7 @@ import {
   QrCode,
   RefreshCw,
   Save,
+  Settings,
   Trash2,
   X,
 } from '@lucide/vue';
@@ -71,7 +73,6 @@ const MIN_SERVICE_PORT = 10000;
 const MAX_SERVICE_PORT = 65535;
 const REQUIRED_LOOPBACK_IP = '127.0.0.1';
 const THEME_STORAGE_KEY = 'yinshu.theme';
-const RECENT_TASK_LIMIT = 2;
 type ThemeMode = 'system' | 'light' | 'dark';
 
 const DEFAULT_APP_CONFIG: AgentConfig['app'] = {
@@ -119,16 +120,19 @@ const exportOptions = ref<ExportConfigOptions>(defaultExportOptions());
 const testingPrint = ref(false);
 const activePort = ref<number | null>(null);
 const moreOpen = ref(false);
+const accessOpen = ref(false);
 const qrOpen = ref(false);
 const qrDataUrl = ref<string | null>(null);
 const accessTab = ref<'websites' | 'devices'>('websites');
 const showingAllTasks = ref(false);
 const savedSettingsKey = ref('');
+const forceCustomPaper = ref(false);
 let colorSchemeQuery: MediaQueryList | null = null;
 let successTimer: number | null = null;
 let lanCopiedTimer: number | null = null;
 let taskHistoryRequestId = 0;
 let taskEventsRequestId = 0;
+let persistLock: Promise<void> = Promise.resolve();
 
 const { t } = useI18n();
 const onboardingReady = computed(() => config.value !== null && !loadingConfig.value);
@@ -158,7 +162,9 @@ const statusVariant = computed(() => {
   if (errorMessage.value || doctorNeedsAttention.value) return 'destructive';
   return 'success';
 });
-/** 打印、端口和偏好是否有尚未保存的改动。 */
+/** 健康时不挂绿徽章，避免把“没事”也做成要处理的信号。 */
+const showStatusBadge = computed(() => statusVariant.value !== 'success');
+/** 端口和偏好是否有尚未保存的改动。打印改动会立即写入。 */
 const hasUnsavedSettings = computed(() => {
   if (!config.value || !savedSettingsKey.value) return false;
   return settingsKey(config.value) !== savedSettingsKey.value;
@@ -184,32 +190,49 @@ const selectedPrinterInfo = computed(
 /** 纸张预设或自定义纸张选择项的双向计算值。 */
 const selectedPaper = computed({
   get: () => {
+    if (forceCustomPaper.value) return 'custom';
     const currentPaper = config.value?.printing.default_paper;
     if (!currentPaper) return 'custom';
 
     return matchingPaper(currentPaper)?.id ?? 'custom';
   },
   set: (paperId: string) => {
-    const paper = papers.value.find((item) => item.id === paperId);
-    if (!paper || !config.value) return;
+    if (!config.value) return;
+    if (paperId === 'custom') {
+      forceCustomPaper.value = true;
+      return;
+    }
 
+    const paper = papers.value.find((item) => item.id === paperId);
+    if (!paper) return;
+
+    forceCustomPaper.value = false;
     config.value.printing.default_paper = {
       width_mm: paper.width_mm,
       height_mm: paper.height_mm,
     };
+    void persistPrinting();
   },
 });
+/** 预设已带尺寸时不再摊开宽高框。 */
+const showPaperDimensions = computed(() => selectedPaper.value === 'custom');
 /** 当前选中的任务摘要。 */
 const selectedTask = computed(
   () => taskHistory.value.find((item) => item.job_id === selectedTaskJobId.value) ?? null,
 );
-/** 首页只露出最近几条，其余进浮层。 */
-const visibleTasks = computed(() => taskHistory.value.slice(0, RECENT_TASK_LIMIT));
-const hasMoreTasks = computed(() => taskHistory.value.length > RECENT_TASK_LIMIT);
+/** 首页只露出最近一条。 */
+const latestTask = computed(() => taskHistory.value[0] ?? null);
 const visibleDevices = computed(
   () => config.value?.security.allowed_ips.filter((entry) => entry !== REQUIRED_LOOPBACK_IP) ?? [],
 );
 const lanCidr = computed(() => ipv4LanCidr(lanAddress.value));
+const websiteCount = computed(() => config.value?.security.allowed_origins.length ?? 0);
+const accessSummary = computed(() => {
+  const devices = visibleDevices.value.length;
+  if (websiteCount.value === 0 && devices === 0) return t('noAllowedOrigins');
+  if (devices === 0) return t('accessSummarySites', { n: websiteCount.value });
+  return t('accessSummarySitesAndDevices', { sites: websiteCount.value, devices });
+});
 const connectionUrl = computed(() => {
   if (!lanAddress.value || !servicePort.value) return null;
   return `ws://${lanAddress.value}:${servicePort.value}/ws`;
@@ -220,13 +243,55 @@ const currentLanguage = computed(() => config.value?.app.language ?? DEFAULT_APP
 
 watch(currentLanguage, (language) => setI18nLocale(language), { immediate: true });
 
-/** 只比较需要显式保存的设置，网站名单改动会单独立即写入。 */
+/** 只比较需要显式保存的设置，网站名单和打印改动会单独立即写入。 */
 function settingsKey(value: AgentConfig): string {
   return JSON.stringify({
     service: value.service,
     printing: value.printing,
     app: value.app,
   });
+}
+
+type SavedSettingsSlice = Pick<AgentConfig, 'service' | 'printing' | 'app'>;
+
+function lastSavedSettings(): SavedSettingsSlice | null {
+  if (!savedSettingsKey.value) return null;
+  try {
+    return JSON.parse(savedSettingsKey.value) as SavedSettingsSlice;
+  } catch {
+    return null;
+  }
+}
+
+function rememberPrintingSaved(printing: AgentConfig['printing']): void {
+  const last = lastSavedSettings();
+  if (!last && !config.value) return;
+  savedSettingsKey.value = JSON.stringify({
+    service: last?.service ?? config.value!.service,
+    printing,
+    app: last?.app ?? config.value!.app,
+  });
+}
+
+async function withPersistLock<T>(work: () => Promise<T>): Promise<T> {
+  const previous = persistLock;
+  let release = () => {};
+  persistLock = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await work();
+  } finally {
+    release();
+  }
+}
+
+function currentSecurity(): AgentConfig['security'] {
+  return {
+    allowed_origins: [...(config.value?.security.allowed_origins ?? [])],
+    allowed_ips: normalizeAllowedIps(config.value?.security.allowed_ips ?? []),
+  };
 }
 
 function printerAvailabilityClass(availability: PrinterAvailability | undefined): string {
@@ -355,7 +420,9 @@ function setPort(value: string | number): void {
 function setPaperDimension(key: keyof EffectivePaper, value: string | number): void {
   const dimension = Number(value);
   if (Number.isFinite(dimension) && dimension > 0) {
+    forceCustomPaper.value = false;
     currentPaper()[key] = dimension;
+    void persistPrinting();
   }
 }
 
@@ -483,6 +550,7 @@ async function handleImportConfig(): Promise<void> {
     const imported = normalizeConfig(
       await importConfigFile(importPath.value, importPassword.value, importPreview.value.file_hash),
     );
+    forceCustomPaper.value = false;
     config.value = normalizeConfig(await saveConfig(imported));
     rememberSavedSettings(config.value);
     showImportDialog.value = false;
@@ -500,6 +568,7 @@ async function loadConfig(): Promise<void> {
   errorMessage.value = '';
 
   try {
+    forceCustomPaper.value = false;
     config.value = normalizeConfig(await getConfig());
     activePort.value = config.value.service.port;
     await Promise.all([refreshPrinters(), refreshTaskHistory(), refreshLanAddress()]);
@@ -556,35 +625,74 @@ async function refreshPapers(): Promise<void> {
 async function handlePrinterChange(value: string): Promise<void> {
   selectedPrinter.value = value;
   await refreshPapers();
+  await persistPrinting();
+}
+
+function clonePrinting(value: AgentConfig['printing']): AgentConfig['printing'] {
+  return {
+    ...value,
+    default_paper: value.default_paper ? { ...value.default_paper } : null,
+  };
+}
+
+/** 只保存打印机、纸张和已即时写入的放行名单，不碰未保存的端口和偏好。 */
+async function persistPrinting(): Promise<boolean> {
+  if (!config.value) return false;
+  return withPersistLock(async () => {
+    if (!config.value) return false;
+    const previous = clonePrinting(config.value.printing);
+    saving.value = true;
+    errorMessage.value = '';
+
+    try {
+      const persistedConfig = await getConfig();
+      persistedConfig.printing = clonePrinting(config.value.printing);
+      persistedConfig.security = currentSecurity();
+      const savedConfig = normalizeConfig(await saveConfig(persistedConfig));
+      config.value.printing = savedConfig.printing;
+      config.value.security = savedConfig.security;
+      rememberPrintingSaved(savedConfig.printing);
+      return true;
+    } catch (error) {
+      if (config.value) config.value.printing = previous;
+      errorMessage.value = error instanceof Error ? error.message : t('saveOrRestartFailed');
+      return false;
+    } finally {
+      saving.value = false;
+    }
+  });
 }
 
 /** 通过 Tauri 保存当前设置；端口变化时重启应用让新监听端口生效。 */
 async function persistConfig(): Promise<void> {
   if (!config.value) return;
-  saving.value = true;
-  errorMessage.value = '';
-  successMessage.value = '';
+  await withPersistLock(async () => {
+    if (!config.value) return;
+    saving.value = true;
+    errorMessage.value = '';
+    successMessage.value = '';
 
-  try {
-    const savedPort = config.value.service.port;
-    const portChanged = activePort.value !== null && savedPort !== activePort.value;
-    config.value = normalizeConfig(await saveConfig(config.value));
-    rememberSavedSettings(config.value);
-    if (portChanged) {
-      if (await isDebugBuild()) {
-        showSuccess(t('settingsSavedDev'));
+    try {
+      const savedPort = config.value.service.port;
+      const portChanged = activePort.value !== null && savedPort !== activePort.value;
+      config.value = normalizeConfig(await saveConfig(config.value));
+      rememberSavedSettings(config.value);
+      if (portChanged) {
+        if (await isDebugBuild()) {
+          showSuccess(t('settingsSavedDev'));
+          return;
+        }
+        showSuccess(t('settingsSavedRestarting'));
+        await relaunch();
         return;
       }
-      showSuccess(t('settingsSavedRestarting'));
-      await relaunch();
-      return;
+      showSuccess(t('settingsSaved'));
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : t('saveOrRestartFailed');
+    } finally {
+      saving.value = false;
     }
-    showSuccess(t('settingsSaved'));
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : t('saveOrRestartFailed');
-  } finally {
-    saving.value = false;
-  }
+  });
 }
 
 function invokeErrorMessage(error: unknown, depth = 0): string {
@@ -750,29 +858,32 @@ function snapshotSecurity(): SecuritySnapshot {
   };
 }
 
-/** 只保存网站和设备名单，不碰未保存的打印、端口和偏好。 */
+/** 只保存网站、设备和当前打印设置，不碰未保存的端口和偏好。 */
 async function persistSecurityChanges(previous: SecuritySnapshot): Promise<boolean> {
   if (!config.value) return false;
-  savingOrigins.value = true;
-  errorMessage.value = '';
+  return withPersistLock(async () => {
+    if (!config.value) return false;
+    savingOrigins.value = true;
+    errorMessage.value = '';
 
-  try {
-    const persistedConfig = await getConfig();
-    persistedConfig.security = {
-      allowed_origins: [...config.value.security.allowed_origins],
-      allowed_ips: normalizeAllowedIps(config.value.security.allowed_ips),
-    };
-    const savedConfig = normalizeConfig(await saveConfig(persistedConfig));
-    config.value.security = savedConfig.security;
-    return true;
-  } catch (error) {
-    config.value.security.allowed_origins = previous.allowed_origins;
-    config.value.security.allowed_ips = previous.allowed_ips;
-    errorMessage.value = error instanceof Error ? error.message : t('saveOrRestartFailed');
-    return false;
-  } finally {
-    savingOrigins.value = false;
-  }
+    try {
+      const persistedConfig = await getConfig();
+      persistedConfig.printing = clonePrinting(config.value.printing);
+      persistedConfig.security = currentSecurity();
+      const savedConfig = normalizeConfig(await saveConfig(persistedConfig));
+      config.value.printing = savedConfig.printing;
+      config.value.security = savedConfig.security;
+      rememberPrintingSaved(savedConfig.printing);
+      return true;
+    } catch (error) {
+      config.value.security.allowed_origins = previous.allowed_origins;
+      config.value.security.allowed_ips = previous.allowed_ips;
+      errorMessage.value = error instanceof Error ? error.message : t('saveOrRestartFailed');
+      return false;
+    } finally {
+      savingOrigins.value = false;
+    }
+  });
 }
 
 async function refreshLanAddress(): Promise<void> {
@@ -840,7 +951,17 @@ function closeTopOverlay(): void {
     qrOpen.value = false;
     return;
   }
+  if (accessOpen.value) {
+    accessOpen.value = false;
+    return;
+  }
   if (moreOpen.value) moreOpen.value = false;
+}
+
+function openAccess(): void {
+  accessOpen.value = true;
+  originErrorMessage.value = '';
+  ipErrorMessage.value = '';
 }
 
 function handleWindowKeydown(event: KeyboardEvent): void {
@@ -1019,20 +1140,20 @@ function formatTaskTime(value: string): string {
 function taskStatusLabel(status: TaskHistoryStatus): string {
   const labels: Record<UiLanguage, Record<TaskHistoryStatus, string>> = {
     'zh-CN': {
-      queued: '已排队',
-      downloading: '下载中',
-      printing: '提交中',
-      submitted: '已提交',
+      queued: '已收下',
+      downloading: '准备中',
+      printing: '出纸中',
+      submitted: '已收下',
       completed: '已完成',
       failed: '失败',
       unknown: '未知',
       cancelled: '已取消',
     },
     en: {
-      queued: 'Queued',
-      downloading: 'Downloading',
-      printing: 'Submitting',
-      submitted: 'Submitted',
+      queued: 'Accepted',
+      downloading: 'Preparing',
+      printing: 'Printing',
+      submitted: 'Accepted',
       completed: 'Completed',
       failed: 'Failed',
       unknown: 'Unknown',
@@ -1043,10 +1164,16 @@ function taskStatusLabel(status: TaskHistoryStatus): string {
   return labels[currentLanguage.value][status];
 }
 
-function taskStatusVariant(status: TaskHistoryStatus): 'success' | 'destructive' | 'outline' {
-  if (status === 'failed' || status === 'cancelled') return 'destructive';
-  if (status === 'completed' || status === 'submitted') return 'success';
-  return 'outline';
+function isFailedTask(status: TaskHistoryStatus): boolean {
+  return status === 'failed' || status === 'cancelled';
+}
+
+function taskStatusVariant(status: TaskHistoryStatus): 'destructive' | 'outline' {
+  return isFailedTask(status) ? 'destructive' : 'outline';
+}
+
+function taskStatusClass(status: TaskHistoryStatus): string {
+  return isFailedTask(status) ? 'text-destructive' : 'text-muted-foreground';
 }
 
 /** 返回任务来源标签。 */
@@ -1100,40 +1227,35 @@ onBeforeUnmount(() => {
   <main
     class="relative flex h-screen flex-col overflow-hidden bg-background px-4 py-3 text-foreground"
   >
-    <div
-      data-testid="settings-column"
-      class="mx-auto flex h-full w-full flex-col gap-3"
-    >
-      <header
-        class="flex shrink-0 flex-col gap-2 border-b pb-2"
-        data-tour="app-status"
-      >
+    <div data-testid="settings-column" class="mx-auto flex h-full w-full flex-col gap-3">
+      <header class="flex shrink-0 flex-col gap-2 border-b pb-2" data-tour="app-status">
         <div class="flex items-center justify-between gap-3">
           <button
             type="button"
             data-testid="status-doctor-trigger"
-            class="rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            class="flex min-w-0 items-center gap-2 rounded-sm text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             :aria-label="t('doctor.open')"
             @click="doctorOpen = true"
           >
-            <Badge :variant="statusVariant">
+            <span class="text-sm font-medium">{{ t('appName') }}</span>
+            <Badge v-if="showStatusBadge" :variant="statusVariant">
               {{ statusLabel }}
             </Badge>
           </button>
           <button
             type="button"
-            data-testid="status-port"
-            class="text-sm text-muted-foreground"
-            :aria-label="t('localPort')"
+            data-testid="more-toggle"
+            data-tour="more-settings"
+            class="rounded-sm p-1 text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            :aria-label="t('more')"
+            :aria-expanded="moreOpen"
             @click="moreOpen = true"
           >
-            {{ servicePort || '-' }}
+            <Settings class="size-4" />
+            <span data-testid="status-port" class="sr-only">{{ servicePort || '-' }}</span>
           </button>
         </div>
-        <div
-          v-if="errorMessage || successMessage"
-          data-testid="app-toast"
-        >
+        <div v-if="errorMessage || successMessage" data-testid="app-toast">
           <Alert
             :variant="errorMessage ? 'error' : 'success'"
             class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5"
@@ -1167,60 +1289,63 @@ onBeforeUnmount(() => {
       </p>
 
       <div v-else-if="config" class="flex min-h-0 flex-1 flex-col gap-3">
-        <section data-testid="print-section" data-tour="print-settings" class="grid shrink-0 gap-2">
-          <div class="flex items-center justify-between gap-2">
-            <h2 class="text-sm font-medium">{{ t('printSection') }}</h2>
-            <div class="flex gap-1">
+        <section data-testid="print-section" data-tour="print-settings" class="grid shrink-0 gap-3">
+          <div class="grid gap-1.5">
+            <Label for="default-printer">{{ t('defaultPrinter') }}</Label>
+            <div class="flex items-center gap-1">
+              <Select
+                :model-value="selectedPrinter"
+                @update:model-value="handlePrinterChange(String($event))"
+              >
+                <SelectTrigger
+                  id="default-printer"
+                  class="w-full"
+                  :aria-label="t('defaultPrinter')"
+                >
+                  <span class="flex min-w-0 items-center gap-2">
+                    <span
+                      data-testid="printer-availability"
+                      :data-printer="selectedPrinterInfo?.name ?? ''"
+                      :data-availability="selectedPrinterInfo?.availability ?? 'unknown'"
+                      class="size-2.5 shrink-0 rounded-full ring-1 ring-black/10"
+                      :class="printerAvailabilityClass(selectedPrinterInfo?.availability)"
+                      :aria-label="printerAvailabilityLabel(selectedPrinterInfo?.availability)"
+                    />
+                    <SelectValue :placeholder="t('selectPrinter')" />
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="printer in printers" :key="printer.name" :value="printer.name">
+                    <template #leading>
+                      <span
+                        class="size-2.5 shrink-0 rounded-full ring-1 ring-black/10"
+                        :class="printerAvailabilityClass(printer.availability)"
+                      />
+                    </template>
+                    {{ printer.name }}{{ printer.is_default ? ` (${t('systemDefault')})` : '' }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 :disabled="loadingPrinters"
+                :aria-label="t('refresh')"
                 @click="refreshPrinters"
               >
                 <RefreshCw class="size-4" :class="{ 'animate-spin': loadingPrinters }" />
-                {{ t('refresh') }}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                :disabled="!canTestPrint || testingPrint"
-                @click="handleTestPrint"
-              >
-                <Printer class="size-4" />
-                {{ testingPrint ? t('submitting') : t('testPrint') }}
               </Button>
             </div>
+            <p
+              v-if="selectedPrinterInfo?.availability === 'unavailable'"
+              data-testid="printer-offline-hint"
+              class="text-xs text-destructive"
+            >
+              {{ t('printerOfflineHint') }}
+            </p>
           </div>
-          <Select
-            :model-value="selectedPrinter"
-            @update:model-value="handlePrinterChange(String($event))"
-          >
-            <SelectTrigger id="default-printer" class="w-full" :aria-label="t('defaultPrinter')">
-              <span class="flex min-w-0 items-center gap-2">
-                <span
-                  data-testid="printer-availability"
-                  :data-printer="selectedPrinterInfo?.name ?? ''"
-                  :data-availability="selectedPrinterInfo?.availability ?? 'unknown'"
-                  class="size-2.5 shrink-0 rounded-full ring-1 ring-black/10"
-                  :class="printerAvailabilityClass(selectedPrinterInfo?.availability)"
-                  :aria-label="printerAvailabilityLabel(selectedPrinterInfo?.availability)"
-                />
-                <SelectValue :placeholder="t('selectPrinter')" />
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="printer in printers" :key="printer.name" :value="printer.name">
-                <template #leading>
-                  <span
-                    class="size-2.5 shrink-0 rounded-full ring-1 ring-black/10"
-                    :class="printerAvailabilityClass(printer.availability)"
-                  />
-                </template>
-                {{ printer.name }}{{ printer.is_default ? ` (${t('systemDefault')})` : '' }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <div class="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] gap-2">
+          <div class="grid gap-1.5">
+            <Label for="default-paper">{{ t('defaultPaper') }}</Label>
             <Select
               :model-value="selectedPaper"
               @update:model-value="selectedPaper = String($event)"
@@ -1235,36 +1360,108 @@ onBeforeUnmount(() => {
                 </SelectItem>
               </SelectContent>
             </Select>
-            <Input
-              id="paper-width"
-              type="number"
-              min="1"
-              step="0.1"
-              :aria-label="t('widthMm')"
-              :model-value="config.printing.default_paper?.width_mm ?? DEFAULT_PAPER.width_mm"
-              @update:model-value="setPaperDimension('width_mm', $event)"
-            />
-            <Input
-              id="paper-height"
-              type="number"
-              min="1"
-              step="0.1"
-              :aria-label="t('heightMm')"
-              :model-value="config.printing.default_paper?.height_mm ?? DEFAULT_PAPER.height_mm"
-              @update:model-value="setPaperDimension('height_mm', $event)"
-            />
+            <div
+              v-if="showPaperDimensions"
+              data-testid="custom-paper-size"
+              class="grid grid-cols-2 gap-2"
+            >
+              <label class="grid gap-1 text-xs text-muted-foreground">
+                {{ t('paperWidthShort') }}
+                <Input
+                  id="paper-width"
+                  type="number"
+                  min="1"
+                  step="0.1"
+                  :aria-label="t('widthMm')"
+                  :model-value="config.printing.default_paper?.width_mm ?? DEFAULT_PAPER.width_mm"
+                  @update:model-value="setPaperDimension('width_mm', $event)"
+                />
+              </label>
+              <label class="grid gap-1 text-xs text-muted-foreground">
+                {{ t('paperHeightShort') }}
+                <Input
+                  id="paper-height"
+                  type="number"
+                  min="1"
+                  step="0.1"
+                  :aria-label="t('heightMm')"
+                  :model-value="config.printing.default_paper?.height_mm ?? DEFAULT_PAPER.height_mm"
+                  @update:model-value="setPaperDimension('height_mm', $event)"
+                />
+              </label>
+            </div>
           </div>
+          <Button class="w-full" :disabled="!canTestPrint || testingPrint" @click="handleTestPrint">
+            <Printer class="size-4" />
+            {{ testingPrint ? t('submitting') : t('testPrint') }}
+          </Button>
         </section>
 
-        <div class="border-t" />
+        <div data-testid="panel-footer" class="mt-auto grid shrink-0 gap-1 border-t pt-1">
+          <button
+            type="button"
+            data-testid="access-toggle"
+            data-tour="access-settings"
+            class="flex w-full items-center justify-between gap-2 py-2 text-left text-sm"
+            @click="openAccess"
+          >
+            <span class="font-medium">{{ t('whoCanConnect') }}</span>
+            <span class="flex min-w-0 items-center gap-1 text-muted-foreground">
+              <span class="truncate">{{ accessSummary }}</span>
+              <ChevronDown class="size-4 shrink-0 -rotate-90" />
+            </span>
+          </button>
+          <button
+            type="button"
+            data-testid="show-all-tasks"
+            data-tour="task-history"
+            class="flex w-full items-center justify-between gap-2 py-2 text-left text-sm"
+            @click="openAllTasks"
+          >
+            <span class="font-medium">{{ t('recent') }}</span>
+            <span
+              data-testid="recent-section"
+              class="flex min-w-0 items-center gap-1 text-muted-foreground"
+            >
+              <span v-if="latestTask" class="truncate">
+                {{ formatTaskTime(latestTask.updated_at) }}
+                {{ taskSourceLabel(latestTask.source) }}
+                <span
+                  v-if="isFailedTask(latestTask.current_status)"
+                  :class="taskStatusClass(latestTask.current_status)"
+                >
+                  {{ taskStatusLabel(latestTask.current_status) }}
+                </span>
+              </span>
+              <span v-else class="truncate">
+                {{ loadingTaskHistory ? t('loadingTasks') : t('noTasks') }}
+              </span>
+              <ChevronDown class="size-4 shrink-0 -rotate-90" />
+            </span>
+          </button>
+        </div>
+      </div>
 
-        <section
-          data-testid="access-section"
-          data-tour="access-settings"
-          class="flex min-h-0 flex-1 flex-col gap-2"
-        >
-          <div class="flex shrink-0 items-center justify-between gap-2">
-            <h2 class="text-sm font-medium">{{ t('whoCanConnect') }}</h2>
+      <div
+        v-if="accessOpen && config"
+        data-testid="access-overlay"
+        class="fixed inset-0 z-40 flex flex-col bg-background"
+      >
+        <Card class="flex h-full min-h-0 w-full flex-col rounded-none border-0 shadow-none">
+          <CardHeader class="flex flex-row items-center justify-between pb-3">
+            <div class="flex min-w-0 items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="access-close"
+                :aria-label="t('back')"
+                @click="accessOpen = false"
+              >
+                <ChevronLeft class="size-4" />
+                {{ t('back') }}
+              </Button>
+              <CardTitle class="text-base">{{ t('whoCanConnect') }}</CardTitle>
+            </div>
             <Button
               variant="ghost"
               size="sm"
@@ -1275,230 +1472,169 @@ onBeforeUnmount(() => {
               <QrCode class="size-4" />
               {{ t('qrCode') }}
             </Button>
-          </div>
-          <div class="flex shrink-0 gap-4 text-sm" role="tablist" :aria-label="t('whoCanConnect')">
-            <button
-              type="button"
-              role="tab"
-              data-testid="access-websites-tab"
-              :aria-selected="accessTab === 'websites'"
-              :class="[preferenceOptionClass(accessTab === 'websites'), 'py-1']"
-              @click="accessTab = 'websites'"
-            >
-              {{ t('websites') }}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              data-testid="access-devices-tab"
-              :aria-selected="accessTab === 'devices'"
-              :class="[preferenceOptionClass(accessTab === 'devices'), 'py-1']"
-              @click="accessTab = 'devices'"
-            >
-              {{ t('devices') }}
-            </button>
-          </div>
-          <form
-            v-if="accessTab === 'websites'"
-            data-testid="add-origin"
-            class="flex shrink-0 items-start gap-2"
-            @submit.prevent="addOrigin"
+          </CardHeader>
+          <CardContent
+            data-testid="access-section"
+            class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden"
           >
-            <div class="grid min-w-0 flex-1 gap-1">
-              <Input
-                v-model="originDraft"
-                placeholder="https://example.com"
-                autocomplete="off"
-                :aria-invalid="originErrorMessage ? 'true' : 'false'"
-              />
-              <p class="min-h-4 text-xs text-destructive">
-                {{ originErrorMessage }}
-              </p>
-            </div>
-            <Button type="submit" size="sm" :disabled="savingOrigins || !originDraft.trim()">
-              {{ t('add') }}
-            </Button>
-          </form>
-          <div v-else data-testid="device-section" class="flex min-h-0 flex-1 flex-col gap-2">
-            <form
-              data-testid="add-device"
-              class="grid shrink-0 gap-2"
-              @submit.prevent="addAllowedIp"
+            <p class="shrink-0 text-xs text-muted-foreground">
+              {{ accessTab === 'websites' ? t('accessHint') : t('deviceHint') }}
+            </p>
+            <div
+              class="flex shrink-0 gap-4 text-sm"
+              role="tablist"
+              :aria-label="t('whoCanConnect')"
             >
-              <div class="flex items-start gap-2">
-                <div class="grid min-w-0 flex-1 gap-1">
-                  <Input
-                    data-testid="device-input"
-                    v-model="ipDraft"
-                    placeholder="192.168.1.0/24"
-                    autocomplete="off"
-                    :aria-invalid="ipErrorMessage ? 'true' : 'false'"
-                  />
-                  <p class="min-h-4 text-xs text-destructive">
-                    {{ ipErrorMessage }}
-                  </p>
-                </div>
-                <Button type="submit" size="sm" :disabled="savingOrigins || !ipDraft.trim()">
-                  {{ t('add') }}
-                </Button>
-              </div>
               <button
-                v-if="lanCidr"
                 type="button"
-                data-testid="allow-this-network"
-                class="w-fit text-sm text-muted-foreground underline-offset-4 hover:underline"
-                :disabled="savingOrigins"
-                @click="allowThisNetwork"
+                role="tab"
+                data-testid="access-websites-tab"
+                :aria-selected="accessTab === 'websites'"
+                :class="[preferenceOptionClass(accessTab === 'websites'), 'py-1']"
+                @click="accessTab = 'websites'"
               >
-                {{ t('allowThisNetwork') }}
+                {{ t('websites') }}
               </button>
+              <button
+                type="button"
+                role="tab"
+                data-testid="access-devices-tab"
+                :aria-selected="accessTab === 'devices'"
+                :class="[preferenceOptionClass(accessTab === 'devices'), 'py-1']"
+                @click="accessTab = 'devices'"
+              >
+                {{ t('devices') }}
+              </button>
+            </div>
+            <form
+              v-if="accessTab === 'websites'"
+              data-testid="add-origin"
+              class="flex shrink-0 items-start gap-2"
+              @submit.prevent="addOrigin"
+            >
+              <div class="grid min-w-0 flex-1 gap-1">
+                <Input
+                  v-model="originDraft"
+                  placeholder="https://example.com"
+                  autocomplete="off"
+                  :aria-invalid="originErrorMessage ? 'true' : 'false'"
+                />
+                <p class="min-h-4 text-xs text-destructive">
+                  {{ originErrorMessage }}
+                </p>
+              </div>
+              <Button type="submit" size="sm" :disabled="savingOrigins || !originDraft.trim()">
+                {{ t('add') }}
+              </Button>
             </form>
-            <div data-testid="device-list" class="min-h-0 flex-1 overflow-y-auto">
+            <div v-else data-testid="device-section" class="flex min-h-0 flex-1 flex-col gap-2">
+              <form
+                data-testid="add-device"
+                class="grid shrink-0 gap-2"
+                @submit.prevent="addAllowedIp"
+              >
+                <div class="flex items-start gap-2">
+                  <div class="grid min-w-0 flex-1 gap-1">
+                    <Input
+                      data-testid="device-input"
+                      v-model="ipDraft"
+                      placeholder="192.168.1.0/24"
+                      autocomplete="off"
+                      :aria-invalid="ipErrorMessage ? 'true' : 'false'"
+                    />
+                    <p class="min-h-4 text-xs text-destructive">
+                      {{ ipErrorMessage }}
+                    </p>
+                  </div>
+                  <Button type="submit" size="sm" :disabled="savingOrigins || !ipDraft.trim()">
+                    {{ t('add') }}
+                  </Button>
+                </div>
+                <button
+                  v-if="lanCidr"
+                  type="button"
+                  data-testid="allow-this-network"
+                  class="w-fit text-sm text-muted-foreground underline-offset-4 hover:underline"
+                  :disabled="savingOrigins"
+                  @click="allowThisNetwork"
+                >
+                  {{ t('allowThisNetwork') }}
+                </button>
+              </form>
+              <div data-testid="device-list" class="min-h-0 flex-1 overflow-y-auto">
+                <div
+                  v-for="entry in visibleDevices"
+                  :key="entry"
+                  class="flex items-center justify-between gap-2 py-1 text-sm"
+                >
+                  <span class="truncate">{{ entry }}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    :aria-label="t('deleteDevice')"
+                    :disabled="savingOrigins"
+                    @click="removeAllowedIp(entry)"
+                  >
+                    <Trash2 class="size-4" />
+                  </Button>
+                </div>
+                <p v-if="visibleDevices.length === 0" class="py-1 text-sm text-muted-foreground">
+                  {{ t('noAllowedDevices') }}
+                </p>
+              </div>
+            </div>
+            <div
+              v-if="accessTab === 'websites'"
+              data-testid="origin-list"
+              class="min-h-0 flex-1 overflow-y-auto"
+            >
               <div
-                v-for="entry in visibleDevices"
-                :key="entry"
+                v-for="origin in config.security.allowed_origins"
+                :key="origin"
                 class="flex items-center justify-between gap-2 py-1 text-sm"
               >
-                <span class="truncate">{{ entry }}</span>
+                <span class="truncate">{{ origin }}</span>
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  :aria-label="t('deleteDevice')"
+                  :aria-label="t('deleteOrigin')"
                   :disabled="savingOrigins"
-                  @click="removeAllowedIp(entry)"
+                  @click="removeOrigin(origin)"
                 >
                   <Trash2 class="size-4" />
                 </Button>
               </div>
-              <p v-if="visibleDevices.length === 0" class="py-1 text-sm text-muted-foreground">
-                {{ t('noAllowedDevices') }}
+              <p
+                v-if="config.security.allowed_origins.length === 0"
+                class="py-1 text-sm text-muted-foreground"
+              >
+                {{ t('noAllowedOrigins') }}
               </p>
             </div>
-          </div>
-          <div
-            v-if="accessTab === 'websites'"
-            data-testid="origin-list"
-            class="min-h-0 flex-1 overflow-y-auto"
-          >
-            <div
-              v-for="origin in config.security.allowed_origins"
-              :key="origin"
-              class="flex items-center justify-between gap-2 py-1 text-sm"
-            >
-              <span class="truncate">{{ origin }}</span>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                :aria-label="t('deleteOrigin')"
-                :disabled="savingOrigins"
-                @click="removeOrigin(origin)"
-              >
-                <Trash2 class="size-4" />
-              </Button>
-            </div>
-            <p
-              v-if="config.security.allowed_origins.length === 0"
-              class="py-1 text-sm text-muted-foreground"
-            >
-              {{ t('noAllowedOrigins') }}
-            </p>
-          </div>
-        </section>
-
-        <div class="border-t" />
-
-        <section
-          data-testid="recent-section"
-          data-tour="task-history"
-          class="grid shrink-0 gap-1.5"
-        >
-          <div class="flex items-center justify-between gap-2">
-            <h2 class="text-sm font-medium">{{ t('recent') }}</h2>
-            <Button
-              variant="ghost"
-              size="sm"
-              :disabled="loadingTaskHistory || clearingTaskHistory"
-              @click="refreshTaskHistory"
-            >
-              <RefreshCw class="size-4" :class="{ 'animate-spin': loadingTaskHistory }" />
-              {{ t('refresh') }}
-            </Button>
-          </div>
-
-          <p v-if="taskHistory.length === 0" class="text-sm text-muted-foreground">
-            {{ loadingTaskHistory ? t('loadingTasks') : t('noTasks') }}
-          </p>
-          <div v-else class="grid">
-            <button
-              v-for="entry in visibleTasks"
-              :key="entry.job_id"
-              type="button"
-              :data-testid="`recent-task-row-${entry.job_id}`"
-              class="flex items-center justify-between gap-2 py-1 text-left text-sm"
-              @click="selectTask(entry.job_id)"
-            >
-              <span class="truncate">
-                {{ formatTaskTime(entry.updated_at) }}
-                <span class="text-muted-foreground">{{ taskSourceLabel(entry.source) }}</span>
-              </span>
-              <Badge :variant="taskStatusVariant(entry.current_status)">
-                {{ taskStatusLabel(entry.current_status) }}
-              </Badge>
-            </button>
-          </div>
-          <button
-            v-if="hasMoreTasks"
-            type="button"
-            data-testid="show-all-tasks"
-            class="text-left text-sm text-muted-foreground underline-offset-4 hover:underline"
-            @click="openAllTasks"
-          >
-            {{ t('allTasks') }}
-          </button>
-        </section>
-
-        <div data-testid="panel-footer" class="grid shrink-0 gap-2 border-t pt-2">
-          <button
-            type="button"
-            data-testid="more-toggle"
-            data-tour="more-settings"
-            class="flex w-full items-center justify-between text-sm font-medium"
-            :aria-expanded="moreOpen"
-            @click="moreOpen = true"
-          >
-            <span>{{ t('more') }}</span>
-            <ChevronDown class="size-4 -rotate-90" />
-          </button>
-          <Button
-            v-if="hasUnsavedSettings"
-            data-testid="save-settings"
-            class="w-full"
-            :disabled="saving"
-            @click="persistConfig"
-          >
-            <Save class="size-4" />
-            {{ saving ? t('saving') : t('save') }}
-          </Button>
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div
         v-if="qrOpen"
         data-testid="connection-overlay"
-        class="fixed inset-0 z-50 grid place-items-end bg-background/80 p-4 backdrop-blur-sm"
-        @click.self="qrOpen = false"
+        class="fixed inset-0 z-50 flex flex-col bg-background"
       >
-        <Card class="flex w-full max-w-md flex-col">
+        <Card class="flex h-full min-h-0 w-full flex-col rounded-none border-0 shadow-none">
           <CardHeader class="flex flex-row items-center justify-between pb-3">
-            <CardTitle class="text-base">{{ t('connectThisComputer') }}</CardTitle>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              :aria-label="t('cancel')"
-              @click="qrOpen = false"
-            >
-              <X class="size-4" />
-            </Button>
+            <div class="flex min-w-0 items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="qr-close"
+                :aria-label="t('back')"
+                @click="qrOpen = false"
+              >
+                <ChevronLeft class="size-4" />
+                {{ t('back') }}
+              </Button>
+              <CardTitle class="text-base">{{ t('connectThisComputer') }}</CardTitle>
+            </div>
           </CardHeader>
           <CardContent class="grid gap-4">
             <div class="grid place-items-center">
@@ -1529,22 +1665,25 @@ onBeforeUnmount(() => {
       <div
         v-if="moreOpen && config"
         data-testid="more-overlay"
-        class="fixed inset-0 z-40 grid place-items-end bg-background/80 p-4 backdrop-blur-sm"
-        @click.self="moreOpen = false"
+        class="fixed inset-0 z-40 flex flex-col bg-background"
       >
-        <Card class="flex max-h-[calc(100vh-2rem)] w-full max-w-md flex-col">
+        <Card class="flex h-full min-h-0 w-full flex-col rounded-none border-0 shadow-none">
           <CardHeader class="flex flex-row items-center justify-between pb-3">
-            <CardTitle class="text-base">{{ t('more') }}</CardTitle>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              :aria-label="t('cancel')"
-              @click="moreOpen = false"
-            >
-              <X class="size-4" />
-            </Button>
+            <div class="flex min-w-0 items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="more-close"
+                :aria-label="t('back')"
+                @click="moreOpen = false"
+              >
+                <ChevronLeft class="size-4" />
+                {{ t('back') }}
+              </Button>
+              <CardTitle class="text-base">{{ t('more') }}</CardTitle>
+            </div>
           </CardHeader>
-          <CardContent class="grid gap-4 overflow-y-auto">
+          <CardContent class="grid min-h-0 flex-1 gap-4 overflow-y-auto">
             <div class="flex items-center justify-between gap-3">
               <div class="grid gap-1">
                 <Label for="autostart">{{ t('autostart') }}</Label>
@@ -1648,6 +1787,15 @@ onBeforeUnmount(() => {
                 {{ t('exportDiagnostics') }}
               </Button>
             </div>
+            <Button
+              data-testid="save-settings"
+              class="w-full"
+              :disabled="saving || !hasUnsavedSettings"
+              @click="persistConfig"
+            >
+              <Save class="size-4" />
+              {{ saving ? t('saving') : t('save') }}
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -1655,13 +1803,33 @@ onBeforeUnmount(() => {
       <div
         v-if="showingAllTasks"
         data-testid="all-tasks-overlay"
-        class="fixed inset-0 z-40 grid place-items-end bg-background/80 p-4 backdrop-blur-sm"
-        @click.self="showingAllTasks = false"
+        class="fixed inset-0 z-40 flex flex-col bg-background"
       >
-        <Card class="flex max-h-[calc(100vh-2rem)] w-full max-w-md flex-col">
+        <Card class="flex h-full min-h-0 w-full flex-col rounded-none border-0 shadow-none">
           <CardHeader class="flex flex-row items-center justify-between pb-3">
-            <CardTitle class="text-base">{{ t('allTasks') }}</CardTitle>
+            <div class="flex min-w-0 items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="tasks-close"
+                :aria-label="t('back')"
+                @click="showingAllTasks = false"
+              >
+                <ChevronLeft class="size-4" />
+                {{ t('back') }}
+              </Button>
+              <CardTitle class="text-base">{{ t('allTasks') }}</CardTitle>
+            </div>
             <div class="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                :disabled="loadingTaskHistory || clearingTaskHistory"
+                :aria-label="t('refresh')"
+                @click="refreshTaskHistory"
+              >
+                <RefreshCw class="size-4" :class="{ 'animate-spin': loadingTaskHistory }" />
+              </Button>
               <Button
                 :variant="confirmingClearTaskHistory ? 'destructive' : 'ghost'"
                 size="sm"
@@ -1670,14 +1838,6 @@ onBeforeUnmount(() => {
               >
                 <Trash2 class="size-4" />
                 {{ confirmingClearTaskHistory ? t('confirmClear') : t('clear') }}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                :aria-label="t('cancel')"
-                @click="showingAllTasks = false"
-              >
-                <X class="size-4" />
               </Button>
             </div>
           </CardHeader>
@@ -1698,9 +1858,9 @@ onBeforeUnmount(() => {
                 {{ formatTaskTime(entry.updated_at) }}
                 <span class="text-muted-foreground">{{ taskSourceLabel(entry.source) }}</span>
               </span>
-              <Badge :variant="taskStatusVariant(entry.current_status)">
+              <span class="shrink-0 text-xs" :class="taskStatusClass(entry.current_status)">
                 {{ taskStatusLabel(entry.current_status) }}
-              </Badge>
+              </span>
             </button>
           </CardContent>
         </Card>
@@ -1709,28 +1869,32 @@ onBeforeUnmount(() => {
       <div
         v-if="selectedTaskJobId"
         data-testid="task-details"
-        class="fixed inset-0 z-50 grid place-items-end bg-background/80 p-4 backdrop-blur-sm"
-        @click.self="closeTaskDetails"
+        class="fixed inset-0 z-50 flex flex-col bg-background"
       >
-        <Card class="flex max-h-[calc(100vh-2rem)] w-full max-w-md flex-col">
+        <Card class="flex h-full min-h-0 w-full flex-col rounded-none border-0 shadow-none">
           <CardHeader class="flex flex-row items-start justify-between gap-3 pb-3">
-            <div class="min-w-0">
-              <CardTitle class="truncate text-base">
-                {{ selectedTask?.job_id ?? t('taskDetails') }}
-              </CardTitle>
-              <p v-if="selectedTask" class="mt-1 text-xs text-muted-foreground">
-                {{ selectedTask.paper_name ?? '-' }} · {{ selectedTask.copies ?? '-' }}
-                {{ t('copiesUnit') }}
-              </p>
+            <div class="flex min-w-0 items-start gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                class="mt-0.5"
+                data-testid="task-details-close"
+                :aria-label="t('back')"
+                @click="closeTaskDetails"
+              >
+                <ChevronLeft class="size-4" />
+                {{ t('back') }}
+              </Button>
+              <div class="min-w-0">
+                <CardTitle class="truncate text-base">
+                  {{ selectedTask?.job_id ?? t('taskDetails') }}
+                </CardTitle>
+                <p v-if="selectedTask" class="mt-1 text-xs text-muted-foreground">
+                  {{ selectedTask.paper_name ?? '-' }} · {{ selectedTask.copies ?? '-' }}
+                  {{ t('copiesUnit') }}
+                </p>
+              </div>
             </div>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              :aria-label="t('cancel')"
-              @click="closeTaskDetails"
-            >
-              <X class="size-4" />
-            </Button>
           </CardHeader>
           <CardContent class="grid gap-2 overflow-y-auto">
             <p v-if="loadingTaskEvents" class="text-sm text-muted-foreground">

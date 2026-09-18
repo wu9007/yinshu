@@ -91,8 +91,8 @@ describe('App status Doctor integration', () => {
 
     wrapper.getComponent(StatusDoctorSheetStub).vm.$emit('status-change', false);
     await nextTick();
-    expect(wrapper.get('[data-testid="status-doctor-trigger"]').text()).toContain('服务正常');
-    expect(wrapper.getComponent(BadgeStub).props('variant')).toBe('success');
+    expect(wrapper.get('[data-testid="status-doctor-trigger"]').text()).toBe('印枢');
+    expect(wrapper.findComponent(BadgeStub).exists()).toBe(false);
 
     wrapper.getComponent(StatusDoctorSheetStub).vm.$emit('status-change', true);
     await nextTick();
