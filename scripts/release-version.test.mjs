@@ -30,8 +30,8 @@ function markdownSection(markdown, heading) {
 }
 
 test('README OS table matches CI-backed platforms', () => {
-  const readme = readFileSync('README.md', 'utf8');
-  const readmeEn = readFileSync('README_en.md', 'utf8');
+  const readme = readFileSync('README.zh-CN.md', 'utf8');
+  const readmeEn = readFileSync('README.md', 'utf8');
   const supported = markdownSection(readme, '## 适配的操作系统');
   const supportedEn = markdownSection(readmeEn, '## Supported operating systems');
   const backlog = markdownSection(readme, '## 待办');

@@ -106,7 +106,7 @@ CLI 命令参考、headless `serve` 模式、`doctor` 诊断、systemd 打包、
 
 | 文档 | 语言 |
 |------|------|
-| `README.md` | 中文 |
-| `README_en.md` | 英文 |
+| `README.md` | English |
+| `README.zh-CN.md` | 中文 |
 | `docs/technical.md` | 中文（详细的协议、API、配置、部署） |
 | `docs/technical_en.md` | 英文 |
