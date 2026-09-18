@@ -10,17 +10,17 @@ Local print agent. A trusted page or phone sends the job; the OS print queue put
   <img src="screenshots/settings.png" width="360" alt="Settings" />
 </p>
 
-## Start
+## Use
 
-Install from [Releases](https://github.com/wu9007/yinshu/releases). Tray → settings: printer, paper, website list. Test print once.
+1. Install from [Releases](https://github.com/wu9007/yinshu/releases). Tray → printer, paper, **Test print**.
+2. Add this page’s Origin. Match **scheme + host + port** exactly.
 
-```bash
-pnpm --dir apps/desktop tauri dev
-```
+   `http://localhost:5173` · `http://127.0.0.1:5173` · `https://erp.example.com`
+3. Connect `ws://127.0.0.1:17890/ws`. Phones: scan the QR, use that `ws://host:17890/ws`.
 
-## Connect
+An HTTPS page cannot open `ws://`. Use `http://localhost` while developing.
 
-`ws://127.0.0.1:17890/ws` · Origin must be on the website list.
+### Print
 
 ```json
 {
@@ -32,7 +32,31 @@ pnpm --dir apps/desktop tauri dev
 }
 ```
 
-`queued` = accepted here. `submitted` = handed to the OS. Not “paper is out”.
+Omit `printer_name` / `paper` to use the tray defaults.
+
+| format | Send | Notes |
+| --- | --- | --- |
+| `pdf` `image` `docx` `xlsx` `pptx` | `file_url` | Office needs a local Office / WPS / LibreOffice |
+| `html` | `file_url` | Public http(s) only. Needs Chrome / Edge |
+| `raw-html` | `html` | Same renderer. No `file_url` |
+| `raw` | `data_base64` | Bytes as-is (ZPL / TSPL / ESC/POS). No `file_url` / `paper` / `copies` |
+
+List printers: `{ "type": "get_printers_list", "request_id": "req-1" }`.
+
+Blood-label ZPL: [yinshu-demo](https://github.com/wu9007/yinshu-demo) (`packages/print-zpl`).
+
+### Status
+
+`queued` → accepted here. `submitted` → handed to the OS. Not “paper is out”. `failed` arrives as `job_status`.
+
+### Stuck
+
+| You see | Check |
+| --- | --- |
+| Cannot connect | Yinshu running? Origin exact? HTTPS page + `ws://` will fail |
+| Handshake closed | Website list missed this Origin (port included) |
+| Raw prints as hex / text | Printer language is ZPL (or TSPL). Job must be `format: "raw"` |
+| Office / HTML fails | Converter or Chrome/Edge installed? File URL public? |
 
 ## Supported operating systems
 
@@ -57,6 +81,12 @@ No installers, CI, or machine verification yet. These are not supported:
 ## Safety
 
 Allow only sites and devices you trust. Never `0.0.0.0/0`. Don’t expose the port.
+
+## Develop
+
+```bash
+pnpm --dir apps/desktop tauri dev
+```
 
 ## License
 
